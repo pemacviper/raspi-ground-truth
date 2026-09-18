@@ -86,3 +86,9 @@ Bei `approved_new` legt n8n erst dann den Ordner in Drive an, registriert dessen
 und markiert den Review mit `POST /reviews/<ID>/complete` als `resolved`.
 
 Damit verändert weder Nova noch Ground Truth selbständig die Drive-Taxonomie.
+
+
+## 1.2.1
+- bestätigter Zielordner für DRV-Renteninformationen: `# Versicherungen / Rentenversicherung Bund`
+- bestätigter Vorsorge-/Vollmacht-Kontext für ZVR-Schreiben
+- Ground-Truth-Fälle für die am 18.09.2026 manuell korrigierten Dokumente

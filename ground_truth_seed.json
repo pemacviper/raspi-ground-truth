@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "canonical_folders": [
     {
       "drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
@@ -218,6 +218,20 @@
       "name": "Wohnung Altenbach",
       "path": "Wohnung Altenbach",
       "category": "property"
+    },
+    {
+      "drive_folder_id": "1VVvyCMHVI8xR4Glb_60ARLZTNH2y5Xk4",
+      "name": "Rentenversicherung Bund",
+      "parent_drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
+      "path": "# Versicherungen / Rentenversicherung Bund",
+      "category": "Rente"
+    },
+    {
+      "drive_folder_id": "1EfqbyDlbGeiidrHoGd0orw6cDpirdfjD",
+      "name": "Patientenverfügung, Vollmacht, Betreuung",
+      "parent_drive_folder_id": "1TTKF7GHWWqCjiWYYYjqOX2mdJbUp65QD",
+      "path": "Medizin / Patientenverfügung, Vollmacht, Betreuung",
+      "category": "Vorsorge/Vollmacht"
     }
   ],
   "entities": [
@@ -394,6 +408,16 @@
       "rule_key": "human_folder_learning_loop",
       "description": "Ein neuer Ordner wird erst nach expliziter Nutzerentscheidung in Drive angelegt. Danach wird er via /register-folder als canonical_folder registriert und die konkrete Zuordnung via /confirm als ground_truth_case gespeichert. Erst folgende Läufe dürfen ihn automatisch verwenden.",
       "priority": 6
+    },
+    {
+      "rule_key": "drv_renteninformation_exact_target",
+      "description": "Renteninformation und Rentenauskunft der Deutschen Rentenversicherung Bund werden bei eindeutiger Evidenz in den bestehenden kanonischen Ordner # Versicherungen / Rentenversicherung Bund abgelegt.",
+      "priority": 10
+    },
+    {
+      "rule_key": "zvr_not_medical_befund",
+      "description": "Schreiben des Zentralen Vorsorgeregisters/Bundesnotarkammer zu Vorsorgevollmacht, Vertrauensperson oder Betreuung sind keine medizinischen Befunde. Bei passender Evidenz ist der bestehende Vorsorge-/Vollmacht-Kontext zu verwenden.",
+      "priority": 10
     }
   ],
   "ground_truth_cases": [
@@ -503,6 +527,36 @@
       "correct_drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
       "correct_path": "Sozialversicherung",
       "reason": "Manuell geprüft: Arbeitgeber ist Absender, Dokumentklasse ist Sozialversicherung. Bestehender kanonischer Hauptordner Sozialversicherung.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
+    },
+    {
+      "drive_file_id": "1eMUAC1nZPk2uLOb2NfzefyDDRvUZLW0J",
+      "file_name": "2026-09-03 Deutsche Rentenversicherung Bund Ihre Renteninformation.pdf",
+      "sender": "Deutsche Rentenversicherung Bund",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Renteninformation",
+      "contract_id": null,
+      "context": "Gesetzliche Rentenversicherung; Renteninformation",
+      "correct_drive_folder_id": "1VVvyCMHVI8xR4Glb_60ARLZTNH2y5Xk4",
+      "correct_path": "# Versicherungen / Rentenversicherung Bund",
+      "reason": "Manuell geprüft; zahlreiche historische Renteninformationen liegen bereits im bestehenden Ordner Rentenversicherung Bund.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
+    },
+    {
+      "drive_file_id": "1AcNmYgTr7zCCHYRJEk9I6cQ8L1oMFNYm",
+      "file_name": "2026-09-03 Bundesnotarkammer Zentrales Vorsorgeregister Benachrichtigung als Vertrauensperson.pdf",
+      "sender": "Bundesnotarkammer / Zentrales Vorsorgeregister",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Benachrichtigung als Vertrauensperson",
+      "contract_id": "ZVR-Registernummer 12761506",
+      "context": "Vorsorgevollmacht; Zentrales Vorsorgeregister; Vertrauensperson",
+      "correct_drive_folder_id": "1EfqbyDlbGeiidrHoGd0orw6cDpirdfjD",
+      "correct_path": "Medizin / Patientenverfügung, Vollmacht, Betreuung",
+      "reason": "Manuell geprüft; Schreiben betrifft ZVR/Vorsorgevollmacht und ist kein medizinischer Befund.",
       "status": "corrected",
       "source": "manual_cleanup_2026-09-18"
     }

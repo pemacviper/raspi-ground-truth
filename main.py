@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 DB_PATH = Path(os.getenv("GROUND_TRUTH_DB", "/data/ground-truth.db"))
 SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 
-app = FastAPI(title="ScanSnap Ground Truth", version="1.2.0")
+app = FastAPI(title="ScanSnap Ground Truth", version="1.2.1")
 
 
 def now_iso() -> str:
@@ -298,7 +298,7 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "1.2.0",
+            "version": "1.2.1",
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
@@ -381,7 +381,7 @@ def context(req: ContextRequest) -> dict[str, Any]:
         ]
 
     return {
-        "ground_truth_version": "1.2.0",
+        "ground_truth_version": "1.2.1",
         "matches": matches[:8],
         "canonical_folders": canonical_folders,
         "rules": rules,
@@ -601,7 +601,7 @@ def confirm(req: ConfirmRequest) -> dict[str, Any]:
 def export() -> dict[str, Any]:
     with db() as conn:
         return {
-            "version": "1.2.0",
+            "version": "1.2.1",
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],
