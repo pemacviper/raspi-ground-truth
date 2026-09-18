@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sqlite3
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,8 +15,11 @@ from pydantic import BaseModel, Field
 
 DB_PATH = Path(os.getenv("GROUND_TRUTH_DB", "/data/ground-truth.db"))
 SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "512"))
+AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
 
-app = FastAPI(title="ScanSnap Ground Truth", version="1.2.1")
+app = FastAPI(title="ScanSnap Ground Truth", version="2.0.0")
 
 
 def now_iso() -> str:
@@ -112,6 +116,15 @@ CREATE TABLE IF NOT EXISTS ground_truth_cases (
     confirmed_at TEXT NOT NULL
 );
 
+
+CREATE TABLE IF NOT EXISTS case_embeddings (
+    case_id INTEGER PRIMARY KEY REFERENCES ground_truth_cases(id) ON DELETE CASCADE,
+    model_id TEXT NOT NULL,
+    dimensions INTEGER NOT NULL,
+    embedding_json TEXT NOT NULL,
+    embedded_text TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS review_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,12 +255,69 @@ def norm(s: str | None) -> str:
     return re.sub(r"\s+", " ", s.casefold()).strip()
 
 
+
+def case_embedding_text(row: sqlite3.Row | dict[str, Any]) -> str:
+    def g(key: str) -> str:
+        try:
+            value = row[key]
+        except (KeyError, IndexError):
+            value = None
+        return str(value or "")
+    return "\n".join([
+        f"Datei: {g('file_name')}",
+        f"Absender: {g('sender')}",
+        f"Leistungserbringer: {g('provider')}",
+        f"Person: {g('person')}",
+        f"Dokumenttyp: {g('document_type')}",
+        f"Vertrags-ID: {g('contract_id')}",
+        f"Kontext: {g('context')}",
+        f"Bestätigtes Ziel: {g('correct_path')}",
+    ]).strip()
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b) or not a:
+        return -1.0
+    dot = sum(x*y for x,y in zip(a,b))
+    na = math.sqrt(sum(x*x for x in a))
+    nb = math.sqrt(sum(y*y for y in b))
+    return dot/(na*nb) if na and nb else -1.0
+
+
+def semantic_matches(conn: sqlite3.Connection, query: list[float] | None, top_k: int) -> list[dict[str, Any]]:
+    if not query:
+        return []
+    rows = conn.execute("""SELECT c.*, e.model_id, e.dimensions, e.embedding_json
+                           FROM case_embeddings e
+                           JOIN ground_truth_cases c ON c.id=e.case_id
+                           WHERE c.status IN ('confirmed','corrected')""").fetchall()
+    hits=[]
+    for r in rows:
+        vec=json.loads(r["embedding_json"])
+        score=cosine_similarity(query, vec)
+        if score >= 0:
+            hits.append({"score": round(score,4), "drive_file_id":r["drive_file_id"],
+                         "file_name":r["file_name"], "sender":r["sender"], "provider":r["provider"],
+                         "person":r["person"], "document_type":r["document_type"], "context":r["context"],
+                         "correct_drive_folder_id":r["correct_drive_folder_id"], "correct_path":r["correct_path"],
+                         "reason":r["reason"], "model_id":r["model_id"]})
+    hits.sort(key=lambda x:x["score"], reverse=True)
+    return hits[:max(1,min(top_k,20))]
+
 class ContextRequest(BaseModel):
     text: str = Field(min_length=1)
     file_name: str | None = None
+    embedding: list[float] | None = None
+    semantic_top_k: int = 5
 
 
 
+
+class EmbeddingUpsertRequest(BaseModel):
+    drive_file_id: str
+    embedding: list[float]
+    embedded_text: str | None = None
+    model_id: str = EMBEDDING_MODEL
 
 class ReviewCreateRequest(BaseModel):
     drive_file_id: str
@@ -298,12 +368,15 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "1.2.1",
+            "version": "2.0.0",
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
             "cases": conn.execute("SELECT COUNT(*) n FROM ground_truth_cases WHERE status IN ('confirmed','corrected')").fetchone()["n"],
             "pending_reviews": conn.execute("SELECT COUNT(*) n FROM review_queue WHERE status='pending'").fetchone()["n"],
+            "embeddings": conn.execute("SELECT COUNT(*) n FROM case_embeddings").fetchone()["n"],
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_dimensions": EMBEDDING_DIMENSIONS,
         }
 
 
@@ -380,9 +453,12 @@ def context(req: ContextRequest) -> dict[str, Any]:
             ).fetchall()
         ]
 
+    sem = semantic_matches(conn, req.embedding, req.semantic_top_k)
+
     return {
-        "ground_truth_version": "1.2.1",
+        "ground_truth_version": "2.0.0",
         "matches": matches[:8],
+        "semantic_matches": sem,
         "canonical_folders": canonical_folders,
         "rules": rules,
         "confirmed_cases": cases,
@@ -397,6 +473,35 @@ def context(req: ContextRequest) -> dict[str, Any]:
 
 
 
+
+
+@app.post("/embeddings/upsert")
+def upsert_embedding(req: EmbeddingUpsertRequest) -> dict[str, Any]:
+    with db() as conn:
+        case=conn.execute("SELECT * FROM ground_truth_cases WHERE drive_file_id=?", (req.drive_file_id,)).fetchone()
+        if not case:
+            raise HTTPException(404, "Confirmed Ground Truth case not found")
+        if len(req.embedding) not in (256,512,1024,1536):
+            raise HTTPException(400, "Unexpected embedding dimensions")
+        text=req.embedded_text or case_embedding_text(case)
+        conn.execute("""INSERT INTO case_embeddings(case_id,model_id,dimensions,embedding_json,embedded_text,updated_at)
+                        VALUES (?,?,?,?,?,?)
+                        ON CONFLICT(case_id) DO UPDATE SET model_id=excluded.model_id,
+                        dimensions=excluded.dimensions,embedding_json=excluded.embedding_json,
+                        embedded_text=excluded.embedded_text,updated_at=excluded.updated_at""",
+                     (case["id"],req.model_id,len(req.embedding),json.dumps(req.embedding),text,now_iso()))
+    return {"success":True,"drive_file_id":req.drive_file_id,"dimensions":len(req.embedding),"model_id":req.model_id}
+
+
+@app.get("/embeddings/missing")
+def missing_embeddings() -> dict[str, Any]:
+    with db() as conn:
+        rows=conn.execute("""SELECT c.* FROM ground_truth_cases c
+                             LEFT JOIN case_embeddings e ON e.case_id=c.id
+                             WHERE c.status IN ('confirmed','corrected') AND e.case_id IS NULL
+                             ORDER BY c.id""").fetchall()
+    return {"model_id":EMBEDDING_MODEL,"dimensions":EMBEDDING_DIMENSIONS,
+            "cases":[{"drive_file_id":r["drive_file_id"],"text":case_embedding_text(r)} for r in rows]}
 
 @app.post("/review")
 def create_review(req: ReviewCreateRequest) -> dict[str, Any]:
@@ -611,4 +716,5 @@ def export() -> dict[str, Any]:
             "rules": [dict(x) for x in conn.execute("SELECT * FROM rules ORDER BY priority,rule_key")],
             "ground_truth_cases": [dict(x) for x in conn.execute("SELECT * FROM ground_truth_cases ORDER BY id")],
             "review_queue": [dict(x) for x in conn.execute("SELECT * FROM review_queue ORDER BY id")],
+            "case_embeddings": [dict(x) for x in conn.execute("SELECT case_id,model_id,dimensions,embedded_text,updated_at FROM case_embeddings ORDER BY case_id")],
         }
