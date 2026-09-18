@@ -432,6 +432,10 @@ class ReviewCompleteRequest(BaseModel):
     success: bool = True
     error: str | None = None
 
+class ResolveFileReviewsRequest(BaseModel):
+    drive_file_id: str
+    reason: str = "auto_filed"
+
 class FolderCatalogItem(BaseModel):
     id: str
     name: str
@@ -1052,6 +1056,37 @@ def complete_review(review_id: int, req: ReviewCompleteRequest) -> dict[str, Any
         conn.execute("UPDATE review_queue SET status=?,processed_at=?,error=? WHERE id=?",
                      ("resolved" if req.success else "error", now_iso(), req.error, review_id))
     return {"success": True, "review_id": review_id, "status": "resolved" if req.success else "error"}
+
+@app.post("/reviews/resolve-file")
+def resolve_reviews_for_file(req: ResolveFileReviewsRequest) -> dict[str, Any]:
+    """Close stale active reviews when a document was filed automatically."""
+    ts = now_iso()
+    with db() as conn:
+        cur = conn.execute(
+            """UPDATE review_queue
+               SET status='resolved',
+                   resolution_type='auto',
+                   decided_at=COALESCE(decided_at, ?),
+                   processed_at=?,
+                   error=NULL
+               WHERE drive_file_id=?
+                 AND status IN ('pending','approved_existing','approved_new')""",
+            (ts, ts, req.drive_file_id),
+        )
+        count = cur.rowcount
+        conn.execute(
+            """INSERT INTO audit_log
+               (drive_file_id,decision,reason,created_at)
+               VALUES (?,?,?,?)""",
+            (req.drive_file_id, "auto_resolved_review", req.reason, ts),
+        )
+    return {
+        "success": True,
+        "drive_file_id": req.drive_file_id,
+        "reviews_resolved": count,
+        "status": "resolved",
+    }
+
 
 @app.post("/register-folder")
 def register_folder(req: RegisterFolderRequest) -> dict[str, Any]:
