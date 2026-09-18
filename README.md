@@ -218,7 +218,7 @@ Der Seed wird bei jedem Start idempotent verarbeitet. Bereits vorhandene SQLite-
 Ein LLM-Vorschlag ist keine Ground Truth. Erst eine bestätigte Zuordnung oder eine explizite Nutzerentscheidung darf dauerhaft gelernt werden. Dokumente werden nicht automatisch gelöscht.
 
 
-## ScanSnap Workflow V4.0
+## ScanSnap Workflow
 
 Der produktive Zielablauf verwendet Titan Text Embeddings V2 zusätzlich zur strukturierten Ground Truth:
 
@@ -251,4 +251,4 @@ Versionsnummern dürfen nicht mehr separat in diesen Stellen gepflegt werden.
 
 ## Review UI
 
-Ab Version 2.0.1 zeigt die Review-Seite die fachlich relevanten Felder als übersichtliche Karten statt primär als JSON-Dump. Die vollständige technische Analyse bleibt unter „Technische Analyse anzeigen“ verfügbar. Bestätigungsseiten nennen Dokument, Ziel und den nächsten Verarbeitungsschritt.
+Die Review-Seite zeigt die fachlich relevanten Felder als übersichtliche Karten statt primär als JSON-Dump. Die vollständige technische Analyse bleibt unter „Technische Analyse anzeigen“ verfügbar. Bestätigungsseiten nennen Dokument, Ziel und den nächsten Verarbeitungsschritt.
