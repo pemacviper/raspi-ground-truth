@@ -1,4 +1,4 @@
-# ScanSnap Ground Truth Service 2.0
+# ScanSnap Ground Truth Service
 
 > Die zentrale Betriebs- und Architektur-Dokumentation des Raspberry Pi wird separat in `pemacviper/raspi-documentation` gepflegt. Dieses Repository dokumentiert nur den Ground-Truth-Service selbst.
 
@@ -100,7 +100,7 @@ Danach:
 docker exec ground-truth python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 ```
 
-Erwartet wird `version: 2.0.0`.
+Die laufende Version wird zentral aus der Datei `VERSION` gelesen und von `/health`, `/context`, `/export`, FastAPI und der Review-Oberfläche verwendet.
 
 ## Persistenz
 
@@ -180,7 +180,7 @@ Status prüfen:
 docker exec ground-truth python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 ```
 
-Der Health-Endpunkt sollte `version: 1.2.1` melden.
+Der Health-Endpunkt sollte exakt die in `VERSION` hinterlegte Version melden.
 
 ## Persistenz
 
@@ -235,3 +235,20 @@ Der Ground-Truth-Container benötigt dafür keine AWS-Credentials. Die Bedrock-A
 ### Sicherheitsregel
 
 Nur `confirmed` oder `corrected` Ground-Truth-Fälle werden in das semantische Gedächtnis aufgenommen. Ein ungeprüfter LLM-Vorschlag wird niemals automatisch eingebettet und als Präzedenzfall verwendet.
+
+
+## Versionierung
+
+Die Datei `VERSION` im Repository ist die einzige Source of Truth für die Service-Version. Der Container kopiert sie nach `/app/VERSION`. `main.py` liest sie beim Start und verwendet denselben Wert für:
+
+- FastAPI/OpenAPI
+- `GET /health`
+- `POST /context` als `ground_truth_version`
+- `GET /export`
+- Review-Oberfläche
+
+Versionsnummern dürfen nicht mehr separat in diesen Stellen gepflegt werden.
+
+## Review UI
+
+Ab Version 2.0.1 zeigt die Review-Seite die fachlich relevanten Felder als übersichtliche Karten statt primär als JSON-Dump. Die vollständige technische Analyse bleibt unter „Technische Analyse anzeigen“ verfügbar. Bestätigungsseiten nennen Dokument, Ziel und den nächsten Verarbeitungsschritt.
