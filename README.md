@@ -88,6 +88,35 @@ Nur bestätigte oder korrigierte Fälle werden semantisches Gedächtnis. Eine un
 
 Die Review Queue, `/register-folder`, `/confirm`, der kanonische Ordnerkatalog und die bestehenden Regeln bleiben unverändert erhalten. Die vorhandene SQLite-Datei wird beim Upgrade weiterverwendet; `case_embeddings` wird idempotent ergänzt.
 
+## Inkrementeller Google-Drive-Ordnerkatalog
+
+Ground Truth speichert den aktuellen Live-Ordnerbaum unterhalb des privaten Archiv-Roots getrennt von den kanonischen, bestätigten Ordnern.
+
+Der produktive Abgleich verwendet ab Ground Truth 2.2 den Google-Drive-Change-Feed:
+
+```text
+einmaliger Initial-/Recovery-Sync
+  -> vollständiger Drive-Ordnerkatalog
+  -> Start-Page-Token speichern
+
+danach regelmäßig
+  -> GET /folders/sync-state
+  -> Google Drive changes.list ab gespeichertem Token
+  -> POST /folders/changes
+  -> nur geänderte Ordner anwenden
+  -> neues Start-Page-Token atomar speichern
+```
+
+Der vollständige Drive-Scan ist damit kein 5-Minuten-Produktivjob mehr. Er wird nur zur Initialisierung oder Wiederherstellung benötigt. Das Start-Page-Token wird vor dem Vollscan geholt, damit Änderungen während des Scans beim ersten inkrementellen Lauf nachgezogen werden.
+
+Neue API:
+
+- `GET /folders/sync-state` – aktuelles Change-Feed-Token und Katalogstatus
+- `POST /folders/sync` – vollständigen Snapshot setzen, optional zusammen mit dem Start-Page-Token
+- `POST /folders/changes` – inkrementelle Drive-Änderungen anwenden und Token atomar fortschreiben
+
+Die Review-Oberfläche zeigt ausschließlich aktuell im Live-Katalog vorhandene Drive-Ordner. Eine explizite Nutzerwahl kann einen Live-Ordner weiterhin in die kanonische Ground Truth übernehmen.
+
 ## Deployment
 
 ```bash
