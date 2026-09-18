@@ -8,13 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 DB_PATH = Path(os.getenv("GROUND_TRUTH_DB", "/data/ground-truth.db"))
 SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 
-app = FastAPI(title="ScanSnap Ground Truth", version="1.1.0")
+app = FastAPI(title="ScanSnap Ground Truth", version="1.2.0")
 
 
 def now_iso() -> str:
@@ -110,6 +111,31 @@ CREATE TABLE IF NOT EXISTS ground_truth_cases (
     source TEXT NOT NULL DEFAULT 'manual_cleanup',
     confirmed_at TEXT NOT NULL
 );
+
+
+CREATE TABLE IF NOT EXISTS review_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drive_file_id TEXT NOT NULL,
+    file_name TEXT,
+    analysis_json TEXT NOT NULL,
+    live_folders_json TEXT,
+    suggested_parent_id TEXT,
+    suggested_parent_path TEXT,
+    suggested_folder_name TEXT,
+    confidence REAL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolution_type TEXT,
+    selected_drive_folder_id TEXT,
+    selected_path TEXT,
+    approved_new_folder_name TEXT,
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    processed_at TEXT,
+    error TEXT,
+    UNIQUE(drive_file_id, status)
+);
+CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,6 +248,22 @@ class ContextRequest(BaseModel):
 
 
 
+
+class ReviewCreateRequest(BaseModel):
+    drive_file_id: str
+    file_name: str | None = None
+    analysis: dict[str, Any]
+    live_folders: list[dict[str, Any]] = []
+    suggested_parent_id: str | None = None
+    suggested_parent_path: str | None = None
+    suggested_folder_name: str | None = None
+    confidence: float | None = None
+    reason: str
+
+class ReviewCompleteRequest(BaseModel):
+    success: bool = True
+    error: str | None = None
+
 class RegisterFolderRequest(BaseModel):
     drive_folder_id: str
     name: str
@@ -256,11 +298,12 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "1.1.0",
+            "version": "1.2.0",
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
             "cases": conn.execute("SELECT COUNT(*) n FROM ground_truth_cases WHERE status IN ('confirmed','corrected')").fetchone()["n"],
+            "pending_reviews": conn.execute("SELECT COUNT(*) n FROM review_queue WHERE status='pending'").fetchone()["n"],
         }
 
 
@@ -338,7 +381,7 @@ def context(req: ContextRequest) -> dict[str, Any]:
         ]
 
     return {
-        "ground_truth_version": "1.1.0",
+        "ground_truth_version": "1.2.0",
         "matches": matches[:8],
         "canonical_folders": canonical_folders,
         "rules": rules,
@@ -353,6 +396,140 @@ def context(req: ContextRequest) -> dict[str, Any]:
     }
 
 
+
+
+@app.post("/review")
+def create_review(req: ReviewCreateRequest) -> dict[str, Any]:
+    ts = now_iso()
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id,status FROM review_queue WHERE drive_file_id=? AND status IN ('pending','approved_existing','approved_new') ORDER BY id DESC LIMIT 1",
+            (req.drive_file_id,),
+        ).fetchone()
+        if existing:
+            return {"success": True, "review_id": existing["id"], "status": existing["status"], "deduplicated": True}
+        cur = conn.execute(
+            """INSERT INTO review_queue
+               (drive_file_id,file_name,analysis_json,live_folders_json,suggested_parent_id,
+                suggested_parent_path,suggested_folder_name,confidence,reason,status,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,'pending',?)""",
+            (req.drive_file_id, req.file_name, json.dumps(req.analysis, ensure_ascii=False),
+             json.dumps(req.live_folders, ensure_ascii=False), req.suggested_parent_id,
+             req.suggested_parent_path, req.suggested_folder_name, req.confidence, req.reason, ts),
+        )
+        rid = cur.lastrowid
+    return {"success": True, "review_id": rid, "status": "pending",
+            "review_url": f"http://192.168.1.115:8011/reviews/{rid}"}
+
+
+@app.get("/reviews")
+def reviews(status: str = "pending") -> dict[str, Any]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM review_queue WHERE status=? ORDER BY created_at ASC", (status,)
+        ).fetchall()
+    return {"reviews": [dict(r) for r in rows]}
+
+
+@app.get("/reviews/approved")
+def approved_reviews() -> dict[str, Any]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM review_queue WHERE status IN ('approved_existing','approved_new') ORDER BY decided_at ASC"
+        ).fetchall()
+    return {"reviews": [dict(r) for r in rows]}
+
+
+@app.get("/reviews/{review_id}", response_class=HTMLResponse)
+def review_page(review_id: int) -> str:
+    with db() as conn:
+        r = conn.execute("SELECT * FROM review_queue WHERE id=?", (review_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, "Review not found")
+        canonical = conn.execute(
+            "SELECT drive_folder_id,path FROM canonical_folders WHERE active=1 ORDER BY path"
+        ).fetchall()
+    analysis = json.loads(r["analysis_json"] or "{}")
+    live = json.loads(r["live_folders_json"] or "[]")
+    options = {}
+    for f in canonical:
+        options[f["drive_folder_id"]] = f["path"]
+    for f in live:
+        fid=f.get("id")
+        if fid:
+            options[fid] = f.get("path") or (
+                (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") +
+                (f.get("name") or f.get("title") or fid)
+            )
+    option_html = "".join(
+        f'<option value="{fid}">{path}</option>' for fid,path in sorted(options.items(), key=lambda x:x[1].casefold())
+    )
+    disabled = r["status"] != "pending"
+    if disabled:
+        return f"""<!doctype html><meta charset="utf-8"><title>ScanSnap Review</title>
+        <style>body{{font:16px system-ui;max-width:850px;margin:40px auto;padding:0 20px}}</style>
+        <h1>ScanSnap Review #{review_id}</h1><p>Status: <b>{r["status"]}</b></p>
+        <p>{r["file_name"] or ""}</p>"""
+    return f"""<!doctype html><meta charset="utf-8"><title>ScanSnap Review</title>
+    <style>body{{font:16px system-ui;max-width:850px;margin:40px auto;padding:0 20px}}fieldset{{margin:20px 0;padding:20px}}input,select,button{{font:inherit;padding:8px;margin:6px 0;max-width:100%}}pre{{white-space:pre-wrap;background:#f5f5f5;padding:12px}}</style>
+    <h1>ScanSnap Review #{review_id}</h1>
+    <p><b>Datei:</b> {r["file_name"] or ""}<br><b>Grund:</b> {r["reason"]}<br>
+    <b>Confidence:</b> {r["confidence"] if r["confidence"] is not None else "—"}<br>
+    <b>Vorschlag:</b> {(r["suggested_parent_path"] or "—")} / {(r["suggested_folder_name"] or "—")}</p>
+    <pre>{json.dumps(analysis, ensure_ascii=False, indent=2)}</pre>
+    <form method="post" action="/reviews/{review_id}/resolve">
+      <fieldset><legend>Bestehenden Ordner verwenden</legend>
+      <select name="existing_folder_id"><option value="">Bitte wählen…</option>{option_html}</select><br>
+      <button name="action" value="existing">Bestehenden Ordner bestätigen</button></fieldset>
+      <fieldset><legend>Neuen Ordner bewusst anlegen</legend>
+      <p>Parent: <b>{r["suggested_parent_path"] or "nicht erkannt"}</b></p>
+      <input name="new_folder_name" value="{r["suggested_folder_name"] or ""}" placeholder="Neuer Ordnername"><br>
+      <button name="action" value="new">Neuen Ordner bestätigen</button></fieldset>
+      <fieldset><legend>Später entscheiden</legend><button name="action" value="defer">Noch nicht entscheiden</button></fieldset>
+    </form>"""
+
+
+@app.post("/reviews/{review_id}/resolve", response_class=HTMLResponse)
+def resolve_review(review_id: int, action: str = Form(...),
+                   existing_folder_id: str = Form(""), new_folder_name: str = Form("")) -> str:
+    ts=now_iso()
+    with db() as conn:
+        r=conn.execute("SELECT * FROM review_queue WHERE id=?", (review_id,)).fetchone()
+        if not r: raise HTTPException(404, "Review not found")
+        if r["status"] != "pending":
+            return f"<h1>Review #{review_id}</h1><p>Bereits entschieden: {r['status']}</p>"
+        if action=="defer":
+            return f"<h1>Review #{review_id}</h1><p>Unverändert. Du kannst später entscheiden.</p>"
+        if action=="existing":
+            if not existing_folder_id: raise HTTPException(400, "No existing folder selected")
+            folder=conn.execute("SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1",(existing_folder_id,)).fetchone()
+            path=folder["path"] if folder else None
+            if not path:
+                live=json.loads(r["live_folders_json"] or "[]")
+                hit=next((x for x in live if x.get("id")==existing_folder_id),None)
+                if not hit: raise HTTPException(400, "Selected folder was not offered by this review")
+                path=(r["suggested_parent_path"]+" / " if r["suggested_parent_path"] else "")+(hit.get("name") or hit.get("title") or existing_folder_id)
+            conn.execute("""UPDATE review_queue SET status='approved_existing',resolution_type='existing',
+                         selected_drive_folder_id=?,selected_path=?,decided_at=? WHERE id=?""",
+                         (existing_folder_id,path,ts,review_id))
+            return f"<h1>Bestätigt</h1><p>{path}</p><p>n8n übernimmt die Zuordnung beim nächsten Review-Lauf.</p>"
+        if action=="new":
+            name=re.sub(r'[\\\\/:*?"<>|]+','-',new_folder_name).strip()
+            if not name or not r["suggested_parent_id"]: raise HTTPException(400, "New folder needs a name and an approved parent")
+            conn.execute("""UPDATE review_queue SET status='approved_new',resolution_type='new',
+                         approved_new_folder_name=?,decided_at=? WHERE id=?""",(name,ts,review_id))
+            return f"<h1>Neue Ordneranlage bestätigt</h1><p>{r['suggested_parent_path']} / {name}</p><p>n8n legt ihn beim nächsten Review-Lauf an und schreibt die Entscheidung in Ground Truth.</p>"
+        raise HTTPException(400, "Unknown action")
+
+
+@app.post("/reviews/{review_id}/complete")
+def complete_review(review_id: int, req: ReviewCompleteRequest) -> dict[str, Any]:
+    with db() as conn:
+        r=conn.execute("SELECT status FROM review_queue WHERE id=?", (review_id,)).fetchone()
+        if not r: raise HTTPException(404, "Review not found")
+        conn.execute("UPDATE review_queue SET status=?,processed_at=?,error=? WHERE id=?",
+                     ("resolved" if req.success else "error", now_iso(), req.error, review_id))
+    return {"success": True, "review_id": review_id, "status": "resolved" if req.success else "error"}
 
 @app.post("/register-folder")
 def register_folder(req: RegisterFolderRequest) -> dict[str, Any]:
@@ -424,7 +601,7 @@ def confirm(req: ConfirmRequest) -> dict[str, Any]:
 def export() -> dict[str, Any]:
     with db() as conn:
         return {
-            "version": "1.1.0",
+            "version": "1.2.0",
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],
@@ -433,4 +610,5 @@ def export() -> dict[str, Any]:
             "signals": [dict(x) for x in conn.execute("SELECT * FROM signals ORDER BY entity_id,signal")],
             "rules": [dict(x) for x in conn.execute("SELECT * FROM rules ORDER BY priority,rule_key")],
             "ground_truth_cases": [dict(x) for x in conn.execute("SELECT * FROM ground_truth_cases ORDER BY id")],
+            "review_queue": [dict(x) for x in conn.execute("SELECT * FROM review_queue ORDER BY id")],
         }

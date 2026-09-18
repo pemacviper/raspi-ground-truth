@@ -68,3 +68,21 @@ Example register:
 ```bash
 curl -X POST http://127.0.0.1:8000/register-folder   -H 'Content-Type: application/json'   -d '{"drive_folder_id":"REAL_DRIVE_ID","name":"Telekom","path":"Telefon und Handy / Telekom","parent_drive_folder_id":"1TePpHeJ7dPZqdLK7Fs6EjZg0yg7J2OtX","reason":"user_approved"}'
 ```
+
+
+## 1.2.0: Persistente Review Queue
+
+Unklare Dokumente werden mit `POST /review` gespeichert. Die Review-Seite ist im LAN unter
+`http://192.168.1.115:8011/reviews/<ID>` erreichbar.
+
+Der Nutzer kann:
+- einen angebotenen bestehenden Ordner bestätigen,
+- einen vorgeschlagenen neuen Ordner ausdrücklich genehmigen,
+- die Entscheidung vertagen.
+
+Die Entscheidung erzeugt noch keine Drive-Änderung. n8n liest `GET /reviews/approved`.
+Bei `approved_new` legt n8n erst dann den Ordner in Drive an, registriert dessen echte ID mit
+`POST /register-folder`, schreibt den bestätigten Fall mit `POST /confirm`, verschiebt die Datei
+und markiert den Review mit `POST /reviews/<ID>/complete` als `resolved`.
+
+Damit verändert weder Nova noch Ground Truth selbständig die Drive-Taxonomie.
