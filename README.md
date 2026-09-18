@@ -214,3 +214,22 @@ Der Seed wird bei jedem Start idempotent verarbeitet. Bereits vorhandene SQLite-
 ## Sicherheitsprinzip
 
 Ein LLM-Vorschlag ist keine Ground Truth. Erst eine bestätigte Zuordnung oder eine explizite Nutzerentscheidung darf dauerhaft gelernt werden. Dokumente werden nicht automatisch gelöscht.
+
+
+## ScanSnap Workflow V4.0
+
+Der produktive Zielablauf verwendet Titan Text Embeddings V2 zusätzlich zur strukturierten Ground Truth:
+
+1. OCR liefert den Dokumenttext.
+2. n8n erzeugt mit `amazon.titan-embed-text-v2:0` ein normalisiertes 512-dimensionales Embedding.
+3. `POST /context` erhält OCR-Text, Dateiname und Embedding.
+4. Ground Truth liefert deterministische Treffer und `semantic_matches` aus ausschließlich bestätigten Fällen.
+5. Nova bewertet beide Evidenzarten. Semantische Ähnlichkeit ist kein Freibrief für eine Zuordnung.
+6. Unsichere Fälle gehen weiterhin in Human Review.
+7. Alle sechs Stunden fragt n8n `GET /embeddings/missing` ab und erzeugt Embeddings für neu bestätigte Ground-Truth-Fälle.
+
+Der Ground-Truth-Container benötigt dafür keine AWS-Credentials. Die Bedrock-Aufrufe erfolgen in n8n mit dem vorhandenen AWS-IAM-Credential.
+
+### Sicherheitsregel
+
+Nur `confirmed` oder `corrected` Ground-Truth-Fälle werden in das semantische Gedächtnis aufgenommen. Ein ungeprüfter LLM-Vorschlag wird niemals automatisch eingebettet und als Präzedenzfall verwendet.
