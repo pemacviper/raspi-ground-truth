@@ -51,6 +51,15 @@ CREATE TABLE IF NOT EXISTS canonical_folders (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS drive_folder_catalog (
+    drive_folder_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    parent_drive_folder_id TEXT,
+    path TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drive_folder_catalog_path ON drive_folder_catalog(path);
+
 CREATE TABLE IF NOT EXISTS entities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     canonical_name TEXT NOT NULL,
@@ -416,6 +425,16 @@ class ReviewCompleteRequest(BaseModel):
     success: bool = True
     error: str | None = None
 
+class FolderCatalogItem(BaseModel):
+    id: str
+    name: str
+    path: str
+    parent_id: str | None = None
+
+class FolderCatalogSyncRequest(BaseModel):
+    folders: list[FolderCatalogItem]
+    complete: bool = True
+
 class RegisterFolderRequest(BaseModel):
     drive_folder_id: str
     name: str
@@ -453,6 +472,7 @@ def health() -> dict[str, Any]:
             "version": APP_VERSION,
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
+            "drive_folder_catalog": conn.execute("SELECT COUNT(*) n FROM drive_folder_catalog").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
             "cases": conn.execute("SELECT COUNT(*) n FROM ground_truth_cases WHERE status IN ('confirmed','corrected')").fetchone()["n"],
             "pending_reviews": conn.execute("SELECT COUNT(*) n FROM review_queue WHERE status='pending'").fetchone()["n"],
@@ -623,6 +643,39 @@ def create_review(req: ReviewCreateRequest) -> dict[str, Any]:
             "review_url": f"http://192.168.1.115:8011/reviews/{rid}"}
 
 
+@app.post("/folders/sync")
+def sync_folder_catalog(req: FolderCatalogSyncRequest) -> dict[str, Any]:
+    """Replace the live Drive folder catalog with one complete snapshot from n8n."""
+    ts = now_iso()
+    seen: set[str] = set()
+    with db() as conn:
+        for folder in req.folders:
+            if folder.id in seen:
+                continue
+            seen.add(folder.id)
+            conn.execute(
+                """INSERT INTO drive_folder_catalog
+                   (drive_folder_id,name,parent_drive_folder_id,path,synced_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(drive_folder_id) DO UPDATE SET
+                     name=excluded.name,
+                     parent_drive_folder_id=excluded.parent_drive_folder_id,
+                     path=excluded.path,
+                     synced_at=excluded.synced_at""",
+                (folder.id, folder.name, folder.parent_id, folder.path, ts),
+            )
+        if req.complete:
+            if seen:
+                placeholders = ",".join("?" for _ in seen)
+                conn.execute(
+                    f"DELETE FROM drive_folder_catalog WHERE drive_folder_id NOT IN ({placeholders})",
+                    tuple(seen),
+                )
+            else:
+                conn.execute("DELETE FROM drive_folder_catalog")
+    return {"success": True, "folders": len(seen), "synced_at": ts, "complete": req.complete}
+
+
 @app.get("/reviews")
 def reviews(status: str = "pending") -> dict[str, Any]:
     with db() as conn:
@@ -685,22 +738,19 @@ def review_page(review_id: int) -> str:
         r = conn.execute("SELECT * FROM review_queue WHERE id=?", (review_id,)).fetchone()
         if not r:
             raise HTTPException(404, "Review not found")
+        catalog = conn.execute(
+            "SELECT drive_folder_id,path FROM drive_folder_catalog ORDER BY path"
+        ).fetchall()
         canonical = conn.execute(
             "SELECT drive_folder_id,path FROM canonical_folders WHERE active=1 ORDER BY path"
         ).fetchall()
 
     analysis = json.loads(r["analysis_json"] or "{}")
-    live = json.loads(r["live_folders_json"] or "[]")
     options: dict[str, str] = {}
-    for folder in canonical:
+    for folder in catalog:
         options[folder["drive_folder_id"]] = folder["path"]
-    for folder in live:
-        fid = folder.get("id")
-        if fid:
-            options[fid] = folder.get("path") or (
-                (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") +
-                (folder.get("name") or folder.get("title") or fid)
-            )
+    for folder in canonical:
+        options.setdefault(folder["drive_folder_id"], folder["path"])
     option_html = "".join(
         f'<option value="{escape(fid, quote=True)}">{escape(path)}</option>'
         for fid, path in sorted(options.items(), key=lambda x: x[1].casefold())
@@ -770,38 +820,33 @@ def resolve_review(review_id: int, action: str = Form(...),
             if not existing_folder_id:
                 raise HTTPException(400, "No existing folder selected")
             folder = conn.execute(
-                "SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1",
+                """SELECT drive_folder_id,name,parent_drive_folder_id,path
+                   FROM drive_folder_catalog WHERE drive_folder_id=?""",
                 (existing_folder_id,),
             ).fetchone()
-            path = folder["path"] if folder else None
-            if not path:
-                live = json.loads(r["live_folders_json"] or "[]")
-                hit = next((x for x in live if x.get("id") == existing_folder_id), None)
-                if not hit:
-                    raise HTTPException(400, "Selected folder was not offered by this review")
-                path = hit.get("path") or (
-                    (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") +
-                    (hit.get("name") or hit.get("title") or existing_folder_id)
-                )
-                # The user explicitly selected an existing live Drive folder.
-                # Promote that folder to canonical Ground Truth before n8n calls /confirm.
-                name = hit.get("name") or hit.get("title") or path.rsplit(" / ", 1)[-1]
-                parent_drive_folder_id = None
-                parents = hit.get("parents")
-                if isinstance(parents, list) and parents:
-                    parent_drive_folder_id = parents[0]
-                conn.execute(
-                    """INSERT INTO canonical_folders
-                       (drive_folder_id,name,parent_drive_folder_id,path,category,active,created_at,updated_at)
-                       VALUES (?,?,?,?,NULL,1,?,?)
-                       ON CONFLICT(drive_folder_id) DO UPDATE SET
-                         name=excluded.name,
-                         parent_drive_folder_id=COALESCE(excluded.parent_drive_folder_id,canonical_folders.parent_drive_folder_id),
-                         path=excluded.path,
-                         active=1,
-                         updated_at=excluded.updated_at""",
-                    (existing_folder_id, name, parent_drive_folder_id, path, ts, ts),
-                )
+            if not folder:
+                canonical = conn.execute(
+                    """SELECT drive_folder_id,name,parent_drive_folder_id,path
+                       FROM canonical_folders WHERE drive_folder_id=? AND active=1""",
+                    (existing_folder_id,),
+                ).fetchone()
+                folder = canonical
+            if not folder:
+                raise HTTPException(400, "Selected folder is not in the current Drive catalog")
+            path = folder["path"]
+            # Explicit human selection promotes an existing live Drive folder to canonical Ground Truth.
+            conn.execute(
+                """INSERT INTO canonical_folders
+                   (drive_folder_id,name,parent_drive_folder_id,path,category,active,created_at,updated_at)
+                   VALUES (?,?,?,?,NULL,1,?,?)
+                   ON CONFLICT(drive_folder_id) DO UPDATE SET
+                     name=excluded.name,
+                     parent_drive_folder_id=excluded.parent_drive_folder_id,
+                     path=excluded.path,
+                     active=1,
+                     updated_at=excluded.updated_at""",
+                (existing_folder_id, folder["name"], folder["parent_drive_folder_id"], path, ts, ts),
+            )
             conn.execute("""UPDATE review_queue SET status='approved_existing',resolution_type='existing',
                          selected_drive_folder_id=?,selected_path=?,decided_at=? WHERE id=?""",
                          (existing_folder_id, path, ts, review_id))
@@ -908,6 +953,7 @@ def export() -> dict[str, Any]:
             "version": APP_VERSION,
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
+            "drive_folder_catalog": [dict(x) for x in conn.execute("SELECT * FROM drive_folder_catalog ORDER BY path")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],
             "aliases": [dict(x) for x in conn.execute("SELECT * FROM aliases ORDER BY entity_id,alias")],
             "contracts": [dict(x) for x in conn.execute("SELECT * FROM contracts ORDER BY entity_id,contract_id")],
