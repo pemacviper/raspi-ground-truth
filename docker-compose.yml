@@ -9,6 +9,9 @@ services:
       - TZ=Europe/Berlin
       - GROUND_TRUTH_DB=/data/ground-truth.db
       - GROUND_TRUTH_SEED=/app/ground_truth_seed.json
+      - AWS_REGION=eu-central-1
+      - EMBEDDING_MODEL=amazon.titan-embed-text-v2:0
+      - EMBEDDING_DIMENSIONS=512
     ports:
       - "192.168.1.115:8011:8000"
     volumes:
