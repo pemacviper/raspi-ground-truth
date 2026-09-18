@@ -1,31 +1,120 @@
-# ScanSnap Ground Truth Service 1.2.1
+# ScanSnap Ground Truth Service 2.0
 
-SQLite `/data/ground-truth.db` ist die persistente Source of Truth für die ScanSnap-Dokumentablage. Der JSON-Seed ergänzt die Datenbank beim Containerstart idempotent und ersetzt keine bestehenden bestätigten Daten.
+Ground Truth 2.0 ist eine **hybride Wissensbasis**. SQLite bleibt die autoritative Source of Truth für Ordner, Regeln, Entitäten, Verträge und bestätigte Fälle. Zusätzlich können bestätigte Fälle semantische Embeddings erhalten.
 
-## Aktueller Stand
+## Architektur
 
-Version 1.2.1 kombiniert den kanonischen Ordnerkatalog, bestätigte Ground-Truth-Fälle und Regeln mit einer persistenten Human-in-the-loop Review Queue.
+```text
+OCR / Metadaten
+      |
+      +--> deterministische Evidenz: Aliases, Verträge, Signale, Regeln
+      |
+      +--> Embedding --> semantisch ähnliche bestätigte Fälle
+      |
+      v
+Ground-Truth-Kontext
+      |
+      v
+Nova / n8n
+      |
+      +--> vorhandenes sicheres Ziel
+      +--> Human Review
+```
 
-Grundprinzipien:
+Ein Vektortreffer ist **Evidenz, keine automatische Entscheidung**. Neue Ordner entstehen weiterhin ausschließlich nach ausdrücklicher Nutzerfreigabe.
 
-- Absender, Leistungserbringer, betroffene Person und Ablageziel sind getrennte Konzepte.
-- Bestehende spezifische kanonische Ordner haben Vorrang vor generischen Personen- oder Sammelordnern.
-- Nova darf Ordner vorschlagen, aber keine neue Archivtaxonomie erzeugen.
-- Neue Google-Drive-Ordner entstehen ausschließlich nach ausdrücklicher Nutzerfreigabe.
-- Unsichere Dokumente bleiben zur manuellen Prüfung in der ScanSnap Inbox.
-- Bestätigte Entscheidungen werden über `/confirm` zu Ground Truth.
+## Embeddings
 
-## Version 1.2.1
+Voreinstellung:
 
-Zusätzlich bestätigt sind:
+```text
+Modell: amazon.titan-embed-text-v2:0
+Region: eu-central-1
+Dimensionen: 512
+```
 
-- DRV-Renteninformationen und Rentenauskünfte → `# Versicherungen / Rentenversicherung Bund`
-- Schreiben von Bundesnotarkammer/Zentralem Vorsorgeregister zu Vertrauensperson, Vorsorgevollmacht oder Betreuung → `Medizin / Patientenverfügung, Vollmacht, Betreuung`
-- ZVR-Schreiben sind nicht allein wegen der betroffenen Person als medizinischer Befund abzulegen.
-- Arbeitgeber wie AWS sind bei Sozialversicherungsmeldungen Absender/Arbeitgeberkontext und nicht automatisch Ablageziel.
-- DEÜV- und §28a-SGB-IV-Dokumente werden bei eindeutiger Evidenz im kanonischen Ordner `Sozialversicherung` abgelegt.
+Der Ground-Truth-Service speichert Embeddings bestätigter Fälle in `case_embeddings`. Die eigentliche Embedding-Erzeugung bleibt bewusst außerhalb des Services und kann durch n8n über Bedrock erfolgen. Dadurch benötigt der Ground-Truth-Container keine AWS-Zugangsdaten.
 
-Die am 18.09.2026 manuell korrigierten Fälle sind im Seed als bestätigte bzw. korrigierte Ground-Truth-Fälle enthalten.
+Titan Text Embeddings V2 unterstützt 256, 512 und 1024 Dimensionen. Für dieses kleine private Archiv sind 512 Dimensionen ein sinnvoller Kompromiss.
+
+## Neue API in 2.0
+
+`GET /embeddings/missing` liefert bestätigte Fälle, für die noch kein Embedding gespeichert ist. Jeder Eintrag enthält den für das Embedding vorgesehenen normalisierten Text.
+
+`POST /embeddings/upsert` speichert das von n8n/Bedrock erzeugte Embedding für einen bestätigten Fall.
+
+Beispiel:
+
+```json
+{
+  "drive_file_id": "DRIVE_FILE_ID",
+  "model_id": "amazon.titan-embed-text-v2:0",
+  "embedding": [0.01, -0.02, 0.03],
+  "embedded_text": "..."
+}
+```
+
+`POST /context` akzeptiert zusätzlich:
+
+```json
+{
+  "text": "OCR-Text",
+  "file_name": "scan.pdf",
+  "embedding": [0.01, -0.02, 0.03],
+  "semantic_top_k": 5
+}
+```
+
+Die Antwort enthält zusätzlich `semantic_matches` mit Cosine-Similarity und dem bestätigten Ziel der ähnlichsten Ground-Truth-Fälle.
+
+## Lernzyklus
+
+```text
+Dokument
+  -> Klassifikation
+  -> Human Review falls nötig
+  -> /confirm
+  -> bestätigter ground_truth_case
+  -> Embedding erzeugen
+  -> /embeddings/upsert
+  -> künftig als semantischer Präzedenzfall verfügbar
+```
+
+Nur bestätigte oder korrigierte Fälle werden semantisches Gedächtnis. Eine ungeprüfte Nova-Entscheidung wird niemals automatisch Trainingsmaterial.
+
+## Bestehende Funktionen
+
+Die Review Queue, `/register-folder`, `/confirm`, der kanonische Ordnerkatalog und die bestehenden Regeln bleiben unverändert erhalten. Die vorhandene SQLite-Datei wird beim Upgrade weiterverwendet; `case_embeddings` wird idempotent ergänzt.
+
+## Deployment
+
+```bash
+docker compose up -d --build
+```
+
+Danach:
+
+```bash
+docker exec ground-truth python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
+```
+
+Erwartet wird `version: 2.0.0`.
+
+## Persistenz
+
+```text
+Docker-Volume: raspi-ground-truth_ground_truth_data
+DB im Container: /data/ground-truth.db
+Host: /var/lib/docker/volumes/raspi-ground-truth_ground_truth_data/_data/ground-truth.db
+```
+
+## Sicherheitsprinzip
+
+**Strukturierte Ground Truth schlägt semantische Ähnlichkeit. Human Review schlägt beides, wenn die Evidenz nicht eindeutig ist.** Das LLM darf Vorschläge machen, aber weder die Archivtaxonomie selbst verändern noch seine eigenen ungeprüften Entscheidungen als Ground Truth zurückschreiben.
+
+---
+
+## Historische Review-Funktion
 
 ## Human-in-the-loop Review
 
