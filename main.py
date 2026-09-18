@@ -19,6 +19,7 @@ SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "512"))
 AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
+DRIVE_ARCHIVE_ROOT_ID = os.getenv("DRIVE_ARCHIVE_ROOT_ID", "15-9Vo_82wutqJu2b2mBP9BvnKQh5rCj0")
 VERSION_PATH = Path(os.getenv("GROUND_TRUTH_VERSION_FILE", "/app/VERSION"))
 APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "dev"
 
@@ -59,6 +60,12 @@ CREATE TABLE IF NOT EXISTS drive_folder_catalog (
     synced_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_drive_folder_catalog_path ON drive_folder_catalog(path);
+
+CREATE TABLE IF NOT EXISTS drive_sync_state (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS entities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -434,6 +441,19 @@ class FolderCatalogItem(BaseModel):
 class FolderCatalogSyncRequest(BaseModel):
     folders: list[FolderCatalogItem]
     complete: bool = True
+    change_page_token: str | None = None
+
+class DriveFolderChange(BaseModel):
+    file_id: str
+    removed: bool = False
+    name: str | None = None
+    mime_type: str | None = None
+    parent_id: str | None = None
+    trashed: bool = False
+
+class FolderChangesRequest(BaseModel):
+    changes: list[DriveFolderChange]
+    new_start_page_token: str
 
 class RegisterFolderRequest(BaseModel):
     drive_folder_id: str
@@ -458,6 +478,68 @@ class ConfirmRequest(BaseModel):
     source: str = "manual_confirmation"
 
 
+def set_sync_state(conn: sqlite3.Connection, key: str, value: str | None) -> None:
+    conn.execute(
+        """INSERT INTO drive_sync_state(key,value,updated_at)
+           VALUES (?,?,?)
+           ON CONFLICT(key) DO UPDATE SET
+             value=excluded.value,
+             updated_at=excluded.updated_at""",
+        (key, value, now_iso()),
+    )
+
+
+def get_sync_state(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM drive_sync_state WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def rebuild_folder_catalog_paths(conn: sqlite3.Connection) -> dict[str, int]:
+    """Rebuild materialized paths from parent IDs and prune folders outside the archive root."""
+    rows = conn.execute(
+        "SELECT drive_folder_id,name,parent_drive_folder_id FROM drive_folder_catalog"
+    ).fetchall()
+    by_id = {r["drive_folder_id"]: dict(r) for r in rows}
+    resolved: dict[str, str] = {}
+
+    # Resolve direct children first, then descendants. Cycles and foreign trees remain unresolved.
+    for _ in range(len(by_id) + 1):
+        changed = False
+        for fid, row in by_id.items():
+            if fid in resolved:
+                continue
+            parent = row["parent_drive_folder_id"]
+            if parent == DRIVE_ARCHIVE_ROOT_ID:
+                resolved[fid] = row["name"]
+                changed = True
+            elif parent in resolved:
+                resolved[fid] = f'{resolved[parent]} / {row["name"]}'
+                changed = True
+        if not changed:
+            break
+
+    ts = now_iso()
+    for fid, path in resolved.items():
+        conn.execute(
+            "UPDATE drive_folder_catalog SET path=?, synced_at=? WHERE drive_folder_id=?",
+            (path, ts, fid),
+        )
+
+    unresolved = set(by_id) - set(resolved)
+    if unresolved:
+        placeholders = ",".join("?" for _ in unresolved)
+        conn.execute(
+            f"DELETE FROM drive_folder_catalog WHERE drive_folder_id IN ({placeholders})",
+            tuple(unresolved),
+        )
+
+    return {
+        "resolved": len(resolved),
+        "pruned": len(unresolved),
+        "total": len(by_id),
+    }
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -473,6 +555,8 @@ def health() -> dict[str, Any]:
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "drive_folder_catalog": conn.execute("SELECT COUNT(*) n FROM drive_folder_catalog").fetchone()["n"],
+            "drive_change_token_initialized": bool(get_sync_state(conn, "drive_change_page_token")),
+            "drive_archive_root_id": DRIVE_ARCHIVE_ROOT_ID,
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
             "cases": conn.execute("SELECT COUNT(*) n FROM ground_truth_cases WHERE status IN ('confirmed','corrected')").fetchone()["n"],
             "pending_reviews": conn.execute("SELECT COUNT(*) n FROM review_queue WHERE status='pending'").fetchone()["n"],
@@ -645,7 +729,12 @@ def create_review(req: ReviewCreateRequest) -> dict[str, Any]:
 
 @app.post("/folders/sync")
 def sync_folder_catalog(req: FolderCatalogSyncRequest) -> dict[str, Any]:
-    """Replace the live Drive folder catalog with one complete snapshot from n8n."""
+    """Replace the live Drive folder catalog with one complete snapshot.
+
+    If change_page_token is supplied, it is committed transactionally with the snapshot.
+    Obtain that token before the full Drive scan so changes during the scan are picked up
+    by the first incremental poll.
+    """
     ts = now_iso()
     seen: set[str] = set()
     with db() as conn:
@@ -673,7 +762,96 @@ def sync_folder_catalog(req: FolderCatalogSyncRequest) -> dict[str, Any]:
                 )
             else:
                 conn.execute("DELETE FROM drive_folder_catalog")
-    return {"success": True, "folders": len(seen), "synced_at": ts, "complete": req.complete}
+        rebuilt = rebuild_folder_catalog_paths(conn)
+        if req.change_page_token:
+            set_sync_state(conn, "drive_change_page_token", req.change_page_token)
+
+    return {
+        "success": True,
+        "folders": rebuilt["resolved"],
+        "pruned": rebuilt["pruned"],
+        "synced_at": ts,
+        "complete": req.complete,
+        "change_token_initialized": bool(req.change_page_token),
+    }
+
+
+@app.get("/folders/sync-state")
+def folder_sync_state() -> dict[str, Any]:
+    with db() as conn:
+        token = get_sync_state(conn, "drive_change_page_token")
+        return {
+            "initialized": bool(token),
+            "page_token": token,
+            "folders": conn.execute("SELECT COUNT(*) n FROM drive_folder_catalog").fetchone()["n"],
+            "archive_root_id": DRIVE_ARCHIVE_ROOT_ID,
+        }
+
+
+@app.post("/folders/changes")
+def apply_folder_changes(req: FolderChangesRequest) -> dict[str, Any]:
+    """Apply Google Drive change-feed events and advance the page token atomically."""
+    if not req.new_start_page_token:
+        raise HTTPException(status_code=400, detail="new_start_page_token is required")
+
+    ts = now_iso()
+    upserted = 0
+    removed = 0
+
+    with db() as conn:
+        for change in req.changes:
+            existing = conn.execute(
+                "SELECT 1 FROM drive_folder_catalog WHERE drive_folder_id=?",
+                (change.file_id,),
+            ).fetchone()
+
+            is_folder = change.mime_type == "application/vnd.google-apps.folder"
+            should_remove = change.removed or change.trashed or not is_folder
+
+            if should_remove:
+                if existing:
+                    conn.execute(
+                        "DELETE FROM drive_folder_catalog WHERE drive_folder_id=?",
+                        (change.file_id,),
+                    )
+                    removed += 1
+                continue
+
+            # Insert every changed folder temporarily. The path rebuild below keeps only
+            # folders reachable from the configured archive root. This also handles moves
+            # into and out of the archive, parent renames, and parent/child changes arriving
+            # in the same change batch independent of their order.
+            conn.execute(
+                """INSERT INTO drive_folder_catalog
+                   (drive_folder_id,name,parent_drive_folder_id,path,synced_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(drive_folder_id) DO UPDATE SET
+                     name=excluded.name,
+                     parent_drive_folder_id=excluded.parent_drive_folder_id,
+                     synced_at=excluded.synced_at""",
+                (
+                    change.file_id,
+                    change.name or change.file_id,
+                    change.parent_id,
+                    change.name or change.file_id,
+                    ts,
+                ),
+            )
+            upserted += 1
+
+        rebuilt = rebuild_folder_catalog_paths(conn)
+        set_sync_state(conn, "drive_change_page_token", req.new_start_page_token)
+
+    return {
+        "success": True,
+        "changes_received": len(req.changes),
+        "folders_upserted": upserted,
+        "folders_removed_directly": removed,
+        "folders": rebuilt["resolved"],
+        "pruned": rebuilt["pruned"],
+        "page_token_updated": True,
+        "synced_at": ts,
+    }
 
 
 @app.get("/reviews")
@@ -741,16 +919,11 @@ def review_page(review_id: int) -> str:
         catalog = conn.execute(
             "SELECT drive_folder_id,path FROM drive_folder_catalog ORDER BY path"
         ).fetchall()
-        canonical = conn.execute(
-            "SELECT drive_folder_id,path FROM canonical_folders WHERE active=1 ORDER BY path"
-        ).fetchall()
 
     analysis = json.loads(r["analysis_json"] or "{}")
-    options: dict[str, str] = {}
-    for folder in catalog:
-        options[folder["drive_folder_id"]] = folder["path"]
-    for folder in canonical:
-        options.setdefault(folder["drive_folder_id"], folder["path"])
+    options: dict[str, str] = {
+        folder["drive_folder_id"]: folder["path"] for folder in catalog
+    }
     option_html = "".join(
         f'<option value="{escape(fid, quote=True)}">{escape(path)}</option>'
         for fid, path in sorted(options.items(), key=lambda x: x[1].casefold())
@@ -954,6 +1127,7 @@ def export() -> dict[str, Any]:
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
             "drive_folder_catalog": [dict(x) for x in conn.execute("SELECT * FROM drive_folder_catalog ORDER BY path")],
+            "drive_sync_state": [dict(x) for x in conn.execute("SELECT * FROM drive_sync_state ORDER BY key")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],
             "aliases": [dict(x) for x in conn.execute("SELECT * FROM aliases ORDER BY entity_id,alias")],
             "contracts": [dict(x) for x in conn.execute("SELECT * FROM contracts ORDER BY entity_id,contract_id")],
