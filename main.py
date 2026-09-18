@@ -148,10 +148,12 @@ CREATE TABLE IF NOT EXISTS review_queue (
     created_at TEXT NOT NULL,
     decided_at TEXT,
     processed_at TEXT,
-    error TEXT,
-    UNIQUE(drive_file_id, status)
+    error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_review_active_file
+ON review_queue(drive_file_id)
+WHERE status IN ('pending','approved_existing','approved_new');
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,6 +191,64 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     ensure_column(conn, "review_queue", "decided_at", "TEXT")
     ensure_column(conn, "review_queue", "processed_at", "TEXT")
     ensure_column(conn, "review_queue", "error", "TEXT")
+
+    # Releases up to 2.0.2 used UNIQUE(drive_file_id, status). That prevents a
+    # later review of the same Drive file from becoming "resolved" when an
+    # older resolved review already exists. Rebuild the table without that
+    # historical constraint and keep uniqueness only for active reviews.
+    table_sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='review_queue'"
+    ).fetchone()
+    normalized_sql = re.sub(r"\\s+", "", (table_sql["sql"] if table_sql else "")).lower()
+    if "unique(drive_file_id,status)" in normalized_sql:
+        conn.execute("ALTER TABLE review_queue RENAME TO review_queue_legacy")
+        conn.execute("""
+            CREATE TABLE review_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                drive_file_id TEXT NOT NULL,
+                file_name TEXT,
+                analysis_json TEXT NOT NULL,
+                live_folders_json TEXT,
+                suggested_parent_id TEXT,
+                suggested_parent_path TEXT,
+                suggested_folder_name TEXT,
+                confidence REAL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                resolution_type TEXT,
+                selected_drive_folder_id TEXT,
+                selected_path TEXT,
+                approved_new_folder_name TEXT,
+                created_at TEXT NOT NULL,
+                decided_at TEXT,
+                processed_at TEXT,
+                error TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO review_queue (
+                id,drive_file_id,file_name,analysis_json,live_folders_json,
+                suggested_parent_id,suggested_parent_path,suggested_folder_name,
+                confidence,reason,status,resolution_type,selected_drive_folder_id,
+                selected_path,approved_new_folder_name,created_at,decided_at,
+                processed_at,error
+            )
+            SELECT
+                id,drive_file_id,file_name,analysis_json,live_folders_json,
+                suggested_parent_id,suggested_parent_path,suggested_folder_name,
+                confidence,reason,status,resolution_type,selected_drive_folder_id,
+                selected_path,approved_new_folder_name,created_at,decided_at,
+                processed_at,error
+            FROM review_queue_legacy
+        """)
+        conn.execute("DROP TABLE review_queue_legacy")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status)")
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_review_active_file
+        ON review_queue(drive_file_id)
+        WHERE status IN ('pending','approved_existing','approved_new')
+    """)
 
 
 def init_db() -> None:
