@@ -1,5 +1,4 @@
 {
-  "version": "1.2.1",
   "canonical_folders": [
     {
       "drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
@@ -244,11 +243,11 @@
       "aliases": [
         {
           "value": "Standard Life",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Standard Life Versicherung",
-          "weight": 1.0
+          "weight": 1
         }
       ],
       "contracts": [
@@ -262,17 +261,17 @@
         {
           "value": "207,06",
           "type": "amount",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "77.198",
           "type": "amount",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "30.11.2041",
           "type": "date",
-          "weight": 1.0
+          "weight": 1
         }
       ]
     },
@@ -285,7 +284,7 @@
       "aliases": [
         {
           "value": "Dr. med. Martin Kraus",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Martin Kraus",
@@ -306,7 +305,7 @@
       "aliases": [
         {
           "value": "Dr. med. Nina Müller",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Nina Müller",
@@ -323,11 +322,11 @@
       "aliases": [
         {
           "value": "Sven Ch. Schmitt",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Dr.med.dent. Sven Ch. Schmitt",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Zahnarztpraxis am Schillerplatz",
@@ -346,7 +345,7 @@
         {
           "value": "Amazon Web Services EMEA SARL Niederlassung",
           "type": "name",
-          "weight": 1.0
+          "weight": 1
         },
         {
           "value": "Amezon Web Services EMEA SARL Niederlassung",
