@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 DB_PATH = Path(os.getenv("GROUND_TRUTH_DB", "/data/ground-truth.db"))
 SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 
-app = FastAPI(title="ScanSnap Ground Truth", version="1.0.0")
+app = FastAPI(title="ScanSnap Ground Truth", version="1.0.1")
 
 
 def now_iso() -> str:
@@ -134,8 +134,9 @@ CREATE INDEX IF NOT EXISTS idx_cases_provider ON ground_truth_cases(provider);
 def init_db() -> None:
     with db() as conn:
         conn.executescript(SCHEMA)
-        count = conn.execute("SELECT COUNT(*) AS n FROM canonical_folders").fetchone()["n"]
-        if count == 0 and SEED_PATH.exists():
+        # Seed is idempotent (INSERT OR IGNORE). Run it on every startup so
+        # schema/catalog additions are also applied to an already existing DB volume.
+        if SEED_PATH.exists():
             seed_database(conn, json.loads(SEED_PATH.read_text(encoding="utf-8")))
 
 
@@ -246,7 +247,7 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "1.0.0",
+            "version": "1.0.1",
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
@@ -318,9 +319,19 @@ def context(req: ContextRequest) -> dict[str, Any]:
             ).fetchall()
         ]
 
+        canonical_folders = [
+            dict(r) for r in conn.execute(
+                """SELECT drive_folder_id,name,parent_drive_folder_id,path,category
+                   FROM canonical_folders
+                   WHERE active=1
+                   ORDER BY path"""
+            ).fetchall()
+        ]
+
     return {
-        "ground_truth_version": "1.0",
+        "ground_truth_version": "1.0.1",
         "matches": matches[:8],
+        "canonical_folders": canonical_folders,
         "rules": rules,
         "confirmed_cases": cases,
         "instruction": (

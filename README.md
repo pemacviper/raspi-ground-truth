@@ -1,47 +1,51 @@
-# ScanSnap Ground Truth Service V1.0
+# ScanSnap Ground Truth Service 1.0.1
 
-Die SQLite-Datenbank `/data/ground-truth.db` ist die Source of Truth.
+SQLite `/data/ground-truth.db` ist die Source of Truth.
 
-`ground_truth_seed.json` dient ausschließlich zum initialen Bootstrap einer leeren Datenbank.
-Spätere Änderungen und bestätigte Korrekturen werden in SQLite gespeichert.
+## Fix 1.0.1
+
+`/context` liefert jetzt zusätzlich den vollständigen Katalog der kanonischen Hauptordner.
+Außerdem wird `ground_truth_seed.json` bei jedem Containerstart idempotent eingelesen.
+Dadurch werden neue Katalogeinträge auch in einer bereits existierenden SQLite-DB ergänzt.
+Bestehende Ground-Truth-Fälle werden nicht gelöscht.
 
 ## Deployment
 
-In Portainer als eigener Git-Stack deployen oder die Dateien in ein neues Repository legen.
+Den bestehenden `raspi-ground-truth` Stack mit diesen vollständigen Dateien aktualisieren und neu bauen.
 
 ```bash
 docker compose up -d --build
+```
+
+Prüfen:
+
+```bash
 docker exec ground-truth python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 ```
 
-Von n8n im gemeinsamen `proxy`-Netz:
-
-```text
-http://ground-truth:8000/health
-http://ground-truth:8000/context
-http://ground-truth:8000/confirm
-http://ground-truth:8000/export
-```
-
-## Sicherheitsmodell
-
-Die Ground Truth liefert Evidenz und bestätigte Referenzfälle. Sie darf fehlende Evidenz im Dokument nicht ersetzen.
-
-V3.1:
-- Confidence < 0.75: keine automatische Ablage.
-- Neue Ordner erst ab Confidence >= 0.90.
-- Bestehende kanonische Ordner bevorzugen.
-- Unsichere Fälle bleiben in der ScanSnap Inbox.
-- Keine automatische Löschung.
-
-## Backup
-
-Die persistente Docker-Volume-Datei `ground-truth.db` wird durch das bestehende Raspberry-Pi-Backup mitgesichert, sofern Docker-Volumes Teil des Backups sind.
-
-Für einen menschenlesbaren Export:
+Der Context muss `canonical_folders` enthalten:
 
 ```bash
-curl http://localhost:8000/export
+docker exec ground-truth python -c "import json,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/context',data=json.dumps({'text':'Test','file_name':'test.pdf'}).encode(),headers={'Content-Type':'application/json'}); d=json.loads(urllib.request.urlopen(r).read()); print(d['ground_truth_version'], len(d['canonical_folders'])); print([(x['name'],x['drive_folder_id']) for x in d['canonical_folders']])"
 ```
 
-Der Export ist nicht die Source of Truth.
+Erwartung: Version `1.0.1` und mindestens 27 kanonische Hauptordner plus bereits vorhandene spezielle Unterordner.
+
+## Endpunkte
+
+- `GET /health`
+- `POST /context`
+- `POST /confirm`
+- `GET /export`
+
+## Persistenz
+
+Docker-Volume:
+
+`raspi-ground-truth_ground_truth_data`
+
+Containerpfad:
+
+`/data/ground-truth.db`
+
+Die DB wird beim Redeploy nicht ersetzt. Der Seed ergänzt nur noch fehlende Datensätze.

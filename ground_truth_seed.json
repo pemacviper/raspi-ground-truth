@@ -92,6 +92,132 @@
       "name": "Banken",
       "path": "Banken",
       "category": "banking"
+    },
+    {
+      "drive_folder_id": "1PtsB_ZbcvdIFHIFtSkyDdAE-JrNtGtvD",
+      "name": "# Familie",
+      "path": "# Familie",
+      "category": "family"
+    },
+    {
+      "drive_folder_id": "1oODU1RY1iFgpP29dT01_L1_zP_zGygM3",
+      "name": "# Freunde",
+      "path": "# Freunde",
+      "category": "personal"
+    },
+    {
+      "drive_folder_id": "1cSBoNbD3K3FUC4HKderV0uHs_ne1FTpS",
+      "name": "# Immobilien",
+      "path": "# Immobilien",
+      "category": "property"
+    },
+    {
+      "drive_folder_id": "1PjRxyf6ZcqkbfxjDeZtdJq5EEVOlafNY",
+      "name": "Abos",
+      "path": "Abos",
+      "category": "subscriptions"
+    },
+    {
+      "drive_folder_id": "1-XPDAZ76cTtUV4qZXyDwqJobWpAS6YDJ",
+      "name": "Altersvorsorge",
+      "path": "Altersvorsorge",
+      "category": "retirement"
+    },
+    {
+      "drive_folder_id": "1SRLQNMrVQ8cU74w9lbWZQR7SQXIyKtuy",
+      "name": "Autos",
+      "path": "Autos",
+      "category": "cars"
+    },
+    {
+      "drive_folder_id": "1TLQ_Ys3khH41-J1drRbMN0q7xxwojlSE",
+      "name": "Ärztekammern",
+      "path": "Ärztekammern",
+      "category": "professional"
+    },
+    {
+      "drive_folder_id": "10ZT-jqdw-XuSw7ZKmbEMX8VM2h-kRjpg",
+      "name": "Deutsche Bahn",
+      "path": "Deutsche Bahn",
+      "category": "travel"
+    },
+    {
+      "drive_folder_id": "1vUTFRmuZ-QJLTWk8HSCfYFoT6vx76A4D",
+      "name": "Fahrrad und Radfahren",
+      "path": "Fahrrad und Radfahren",
+      "category": "cycling"
+    },
+    {
+      "drive_folder_id": "1TAO6oRRagqcPuQlb2XSZaiH_n-cMHK5-",
+      "name": "Finanzamt",
+      "path": "Finanzamt",
+      "category": "tax"
+    },
+    {
+      "drive_folder_id": "1A8L_m2YKje9P6cCsjJ2ldfzjV6Qi4aIp",
+      "name": "Garten",
+      "path": "Garten",
+      "category": "garden"
+    },
+    {
+      "drive_folder_id": "1R0yrLLezLtX6MXek-dFUnlwjab2Pov-Y",
+      "name": "Haus",
+      "path": "Haus",
+      "category": "house"
+    },
+    {
+      "drive_folder_id": "1TTKF7GHWWqCjiWYYYjqOX2mdJbUp65QD",
+      "name": "Medizin",
+      "path": "Medizin",
+      "category": "medical_knowledge"
+    },
+    {
+      "drive_folder_id": "1S56RyLUDiFOcxCj30J3jhUOXoWxniwyV",
+      "name": "Medizin Informatik",
+      "path": "Medizin Informatik",
+      "category": "medical_informatics"
+    },
+    {
+      "drive_folder_id": "1Qfbzi2XFIUWEI2JnkIRIO_7VYIsggTwx",
+      "name": "MLP",
+      "path": "MLP",
+      "category": "finance"
+    },
+    {
+      "drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
+      "name": "Sozialversicherung",
+      "path": "Sozialversicherung",
+      "category": "social_insurance"
+    },
+    {
+      "drive_folder_id": "1TCfeM3N4cIvemx6pz2WR_XiX4efvCghC",
+      "name": "Sport",
+      "path": "Sport",
+      "category": "sport"
+    },
+    {
+      "drive_folder_id": "1SjQy10q6ep_FbGaASrhkinqPszl5j8Qw",
+      "name": "Steuer",
+      "path": "Steuer",
+      "category": "tax"
+    },
+    {
+      "drive_folder_id": "1xGKLJIDSreNAFVpoCR4C9oKLAOnWAALD",
+      "name": "Technik und IT",
+      "path": "Technik und IT",
+      "category": "technology"
+    },
+    {
+      "drive_folder_id": "1TePpHeJ7dPZqdLK7Fs6EjZg0yg7J2OtX",
+      "name": "Telefon und Handy",
+      "path": "Telefon und Handy",
+      "category": "telecom"
+    },
+    {
+      "drive_folder_id": "1P2aynlmQh-gLymb7OZSykcynRMgdhTDJ",
+      "name": "Wohnung Altenbach",
+      "path": "Wohnung Altenbach",
+      "category": "property"
     }
   ],
   "entities": [
