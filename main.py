@@ -593,7 +593,22 @@ def create_review(req: ReviewCreateRequest) -> dict[str, Any]:
             (req.drive_file_id,),
         ).fetchone()
         if existing:
-            return {"success": True, "review_id": existing["id"], "status": existing["status"], "deduplicated": True}
+            # Refresh the live Drive folder snapshot on every repeated review call.
+            # This keeps pending Human Reviews aligned with the current Drive tree
+            # without turning live folders into canonical Ground Truth.
+            conn.execute(
+                """UPDATE review_queue
+                   SET live_folders_json=?
+                   WHERE id=?""",
+                (json.dumps(req.live_folders, ensure_ascii=False), existing["id"]),
+            )
+            return {
+                "success": True,
+                "review_id": existing["id"],
+                "status": existing["status"],
+                "deduplicated": True,
+                "review_url": f"http://192.168.1.115:8011/reviews/{existing['id']}",
+            }
         cur = conn.execute(
             """INSERT INTO review_queue
                (drive_file_id,file_name,analysis_json,live_folders_json,suggested_parent_id,
