@@ -452,8 +452,7 @@ def context(req: ContextRequest) -> dict[str, Any]:
                    ORDER BY path"""
             ).fetchall()
         ]
-
-    sem = semantic_matches(conn, req.embedding, req.semantic_top_k)
+        sem = semantic_matches(conn, req.embedding, req.semantic_top_k)
 
     return {
         "ground_truth_version": "2.0.0",
