@@ -173,9 +173,28 @@ CREATE INDEX IF NOT EXISTS idx_cases_provider ON ground_truth_cases(provider);
 """
 
 
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    """Add a column to an existing SQLite table when upgrading a persistent DB."""
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    """Forward-only, idempotent migrations for databases created by older releases."""
+    ensure_column(conn, "review_queue", "resolution_type", "TEXT")
+    ensure_column(conn, "review_queue", "selected_drive_folder_id", "TEXT")
+    ensure_column(conn, "review_queue", "selected_path", "TEXT")
+    ensure_column(conn, "review_queue", "approved_new_folder_name", "TEXT")
+    ensure_column(conn, "review_queue", "decided_at", "TEXT")
+    ensure_column(conn, "review_queue", "processed_at", "TEXT")
+    ensure_column(conn, "review_queue", "error", "TEXT")
+
+
 def init_db() -> None:
     with db() as conn:
         conn.executescript(SCHEMA)
+        migrate_db(conn)
         # Seed is idempotent (INSERT OR IGNORE). Run it on every startup so
         # schema/catalog additions are also applied to an already existing DB volume.
         if SEED_PATH.exists():
