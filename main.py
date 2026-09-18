@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 DB_PATH = Path(os.getenv("GROUND_TRUTH_DB", "/data/ground-truth.db"))
 SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 
-app = FastAPI(title="ScanSnap Ground Truth", version="1.0.1")
+app = FastAPI(title="ScanSnap Ground Truth", version="1.1.0")
 
 
 def now_iso() -> str:
@@ -221,6 +221,15 @@ class ContextRequest(BaseModel):
     file_name: str | None = None
 
 
+
+class RegisterFolderRequest(BaseModel):
+    drive_folder_id: str
+    name: str
+    path: str
+    parent_drive_folder_id: str | None = None
+    category: str | None = None
+    reason: str = "manual_folder_approval"
+
 class ConfirmRequest(BaseModel):
     drive_file_id: str
     file_name: str | None = None
@@ -247,7 +256,7 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "1.0.1",
+            "version": "1.1.0",
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
@@ -329,7 +338,7 @@ def context(req: ContextRequest) -> dict[str, Any]:
         ]
 
     return {
-        "ground_truth_version": "1.0.1",
+        "ground_truth_version": "1.1.0",
         "matches": matches[:8],
         "canonical_folders": canonical_folders,
         "rules": rules,
@@ -337,8 +346,38 @@ def context(req: ContextRequest) -> dict[str, Any]:
         "instruction": (
             "Use Ground Truth as evidence, not as permission to guess. "
             "Sender and filing provider are separate concepts. "
-            "Prefer a confirmed canonical folder only when document evidence supports it."
+            "Never create or invent Drive folders automatically. "
+            "If no existing canonical/live folder is sufficiently supported, request human review. "
+            "A new folder becomes Ground Truth only after explicit user approval, Drive creation, /register-folder, and /confirm."
         ),
+    }
+
+
+
+@app.post("/register-folder")
+def register_folder(req: RegisterFolderRequest) -> dict[str, Any]:
+    """Register only a folder that the user has explicitly approved/created in Drive."""
+    ts = now_iso()
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO canonical_folders
+               (drive_folder_id,name,parent_drive_folder_id,path,category,active,created_at,updated_at)
+               VALUES (?,?,?,?,?,1,?,?)
+               ON CONFLICT(drive_folder_id) DO UPDATE SET
+                 name=excluded.name,
+                 parent_drive_folder_id=excluded.parent_drive_folder_id,
+                 path=excluded.path,
+                 category=COALESCE(excluded.category,canonical_folders.category),
+                 active=1,
+                 updated_at=excluded.updated_at""",
+            (req.drive_folder_id, req.name, req.parent_drive_folder_id, req.path,
+             req.category, ts, ts),
+        )
+    return {
+        "success": True,
+        "drive_folder_id": req.drive_folder_id,
+        "path": req.path,
+        "message": "User-approved folder registered as canonical Ground Truth."
     }
 
 
@@ -385,7 +424,7 @@ def confirm(req: ConfirmRequest) -> dict[str, Any]:
 def export() -> dict[str, Any]:
     with db() as conn:
         return {
-            "version": "1.0",
+            "version": "1.1.0",
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],

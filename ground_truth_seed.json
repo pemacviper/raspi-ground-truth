@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1.0",
   "canonical_folders": [
     {
       "drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
@@ -320,6 +320,38 @@
           "weight": 0.8
         }
       ]
+    },
+    {
+      "key": "amazon_web_services_employer",
+      "canonical_name": "Amazon Web Services EMEA SARL Niederlassung",
+      "entity_type": "employer",
+      "canonical_drive_folder_id": null,
+      "person": "Peter",
+      "notes": "Arbeitgeber/Absender. Kein Ablageziel allein aufgrund des Absenders.",
+      "aliases": [
+        {
+          "value": "Amazon Web Services EMEA SARL Niederlassung",
+          "type": "name",
+          "weight": 1.0
+        },
+        {
+          "value": "Amezon Web Services EMEA SARL Niederlassung",
+          "type": "ocr",
+          "weight": 0.9
+        },
+        {
+          "value": "Atnazon Web Services EMEA SARL Niederlassung",
+          "type": "ocr",
+          "weight": 0.8
+        }
+      ],
+      "signals": [
+        {
+          "value": "Anni-Albers-Str. 21",
+          "type": "address",
+          "weight": 0.8
+        }
+      ]
     }
   ],
   "rules": [
@@ -347,6 +379,21 @@
       "rule_key": "no_guessing",
       "priority": 50,
       "description": "Bei unzureichender Evidenz keine Zuordnung erfinden. Unsichere Dokumente zur Prüfung in der ScanSnap Inbox belassen."
+    },
+    {
+      "rule_key": "deuev_social_insurance",
+      "description": "Bescheinigungen/Meldungen zur Sozialversicherung nach § 28a Abs. 5 SGB IV bzw. DEÜV werden bei eindeutiger Dokumentevidenz im kanonischen Ordner Sozialversicherung abgelegt. Der Arbeitgeber ist Absender/Arbeitgeberkontext, nicht Ablageziel.",
+      "priority": 15
+    },
+    {
+      "rule_key": "no_automatic_folder_creation",
+      "description": "Der ScanSnap-Workflow darf niemals selbstständig neue Drive-Ordner anlegen. Wenn kein bestehender kanonischer/live Ordner sicher passt, ist human_review erforderlich.",
+      "priority": 5
+    },
+    {
+      "rule_key": "human_folder_learning_loop",
+      "description": "Ein neuer Ordner wird erst nach expliziter Nutzerentscheidung in Drive angelegt. Danach wird er via /register-folder als canonical_folder registriert und die konkrete Zuordnung via /confirm als ground_truth_case gespeichert. Erst folgende Läufe dürfen ihn automatisch verwenden.",
+      "priority": 6
     }
   ],
   "ground_truth_cases": [
@@ -398,6 +445,66 @@
       "correct_drive_folder_id": "1HoeEe3zL4wTXhHGV8ftH_9R8vppChrf3",
       "correct_path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. Schmitt - Zahnarzt",
       "reason": "PVS dental ist Abrechnungsstelle; Dokument nennt Peter und Sven Ch. Schmitt."
+    },
+    {
+      "drive_file_id": "1azw3xFbcutoK33R8WT3RmSbvlTpE4hlo",
+      "file_name": "2026-08-25 Amazon Web Services EMEA SARL Niederlassung Stornierung einer bereits abgegebenen Meldung.pdf",
+      "sender": "Amazon Web Services EMEA SARL Niederlassung",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Stornierung einer bereits abgegebenen DEÜV-Meldung",
+      "contract_id": null,
+      "context": "Sozialversicherung; § 28a Abs. 5 SGB IV; DEÜV",
+      "correct_drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
+      "correct_path": "Sozialversicherung",
+      "reason": "Manuell geprüft: Arbeitgeber ist Absender, Dokumentklasse ist Sozialversicherung. Bestehender kanonischer Hauptordner Sozialversicherung.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
+    },
+    {
+      "drive_file_id": "1UcujvpRFvLf-RUOmjEf66QedOYxz9J9T",
+      "file_name": "2026-08-25 Amazon Web Services EMEA SARL Niederlassung Beitragsnachweis.pdf",
+      "sender": "Amazon Web Services EMEA SARL Niederlassung",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Bescheinigung zur Sozialversicherung / Beitragsnachweis",
+      "contract_id": null,
+      "context": "Sozialversicherung; § 28a Abs. 5 SGB IV; DEÜV",
+      "correct_drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
+      "correct_path": "Sozialversicherung",
+      "reason": "Manuell geprüft: Arbeitgeber ist Absender, Dokumentklasse ist Sozialversicherung. Bestehender kanonischer Hauptordner Sozialversicherung.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
+    },
+    {
+      "drive_file_id": "16MQ7Qp7FI8RyhBQLFgLVEq-ks5iAeiji",
+      "file_name": "2025-01-01 Amazon Web Services EMEA SARL Niederlassung Bescheinigung zur Sozialversicherung.pdf",
+      "sender": "Amazon Web Services EMEA SARL Niederlassung",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Bescheinigung zur Sozialversicherung",
+      "contract_id": null,
+      "context": "Sozialversicherung; § 28a Abs. 5 SGB IV; DEÜV",
+      "correct_drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
+      "correct_path": "Sozialversicherung",
+      "reason": "Manuell geprüft: Arbeitgeber ist Absender, Dokumentklasse ist Sozialversicherung. Bestehender kanonischer Hauptordner Sozialversicherung.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
+    },
+    {
+      "drive_file_id": "1hMx9GmXHyUyquZiAcVru_ZGSslWv391p",
+      "file_name": "2026-08-25 Amazon Web Services EMEA SARL Niederlassung Bescheinigung zur Sozialversicherung.pdf",
+      "sender": "Amazon Web Services EMEA SARL Niederlassung",
+      "provider": null,
+      "person": "Peter",
+      "document_type": "Bescheinigung zur Sozialversicherung",
+      "contract_id": null,
+      "context": "Sozialversicherung; § 28a Abs. 5 SGB IV; DEÜV",
+      "correct_drive_folder_id": "1Thzc7bNfGDGymjxi8_iFWpBOarbUqLZP",
+      "correct_path": "Sozialversicherung",
+      "reason": "Manuell geprüft: Arbeitgeber ist Absender, Dokumentklasse ist Sozialversicherung. Bestehender kanonischer Hauptordner Sozialversicherung.",
+      "status": "corrected",
+      "source": "manual_cleanup_2026-09-18"
     }
   ]
 }

@@ -49,3 +49,22 @@ Containerpfad:
 `/data/ground-truth.db`
 
 Die DB wird beim Redeploy nicht ersetzt. Der Seed ergänzt nur noch fehlende Datensätze.
+
+
+## 1.1.0: Human-in-the-loop folder learning
+
+The ScanSnap workflow must not create Drive folders automatically.
+
+When a document cannot be assigned safely:
+1. it stays in the ScanSnap Inbox;
+2. the review message contains the proposed folder name/path and evidence;
+3. the user either selects an existing folder or explicitly creates/approves a new folder;
+4. for a new folder, register its real Google Drive ID with `POST /register-folder`;
+5. store the confirmed document assignment with `POST /confirm`.
+
+Only after steps 4 and 5 is the new folder part of Ground Truth and available to later runs.
+
+Example register:
+```bash
+curl -X POST http://127.0.0.1:8000/register-folder   -H 'Content-Type: application/json'   -d '{"drive_folder_id":"REAL_DRIVE_ID","name":"Telekom","path":"Telefon und Handy / Telekom","parent_drive_folder_id":"1TePpHeJ7dPZqdLK7Fs6EjZg0yg7J2OtX","reason":"user_approved"}'
+```
