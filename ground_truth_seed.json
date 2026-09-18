@@ -1,0 +1,277 @@
+{
+  "version": "1.0",
+  "canonical_folders": [
+    {
+      "drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
+      "name": "# Versicherungen",
+      "path": "# Versicherungen",
+      "category": "insurance"
+    },
+    {
+      "drive_folder_id": "1X4oXZlKQrwYsdmp3LB4wnNs_4kKG_RYA",
+      "name": "Standard Life Versicherung",
+      "parent_drive_folder_id": "1PFsYX_lU0hfYm_YwxeQ0o35rKXLa7qay",
+      "path": "# Versicherungen / Standard Life Versicherung",
+      "category": "insurance"
+    },
+    {
+      "drive_folder_id": "1-0oPxtGESrnp_NSIWZ0QEFlOuJ2AfJ1J",
+      "name": "EWS Schönau",
+      "path": "EWS Schönau",
+      "category": "energy"
+    },
+    {
+      "drive_folder_id": "1T-9pPQTGtc7Dd0VDHuLO2cuMgu9RL_js",
+      "name": "Urlaub",
+      "path": "Urlaub",
+      "category": "travel"
+    },
+    {
+      "drive_folder_id": "1Tqusu-tieX-OG4W9SqDMZ5zdGAJLMGsL",
+      "name": "Befunde und Medizinsiche Unterlagen",
+      "path": "Befunde und Medizinsiche Unterlagen",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1XRAxTs0-1x_ElLM_2n9aFwUbmbf46nzK",
+      "name": "Peter",
+      "parent_drive_folder_id": "1Tqusu-tieX-OG4W9SqDMZ5zdGAJLMGsL",
+      "path": "Befunde und Medizinsiche Unterlagen / Peter",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "13-Ry0W7zwclefBol5Pb1_Rk-E0QIu6dh",
+      "name": "Fin",
+      "parent_drive_folder_id": "1Tqusu-tieX-OG4W9SqDMZ5zdGAJLMGsL",
+      "path": "Befunde und Medizinsiche Unterlagen / Fin",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1aEBMWESJZlzhN8JIEZ-Go2EMbyAkUW5p",
+      "name": "Wiebke",
+      "parent_drive_folder_id": "1Tqusu-tieX-OG4W9SqDMZ5zdGAJLMGsL",
+      "path": "Befunde und Medizinsiche Unterlagen / Wiebke",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1VXn8e0eAzJRwj9I0WzfgJqI0eKrpjVhO",
+      "name": "Ben",
+      "parent_drive_folder_id": "1Tqusu-tieX-OG4W9SqDMZ5zdGAJLMGsL",
+      "path": "Befunde und Medizinsiche Unterlagen / Ben",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1fH5iupsnbZNRHjNPzSemf6bG3wH4I9ph",
+      "name": "Dr. Kraus",
+      "parent_drive_folder_id": "1XRAxTs0-1x_ElLM_2n9aFwUbmbf46nzK",
+      "path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. Kraus",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1wpvJRCjtrZKbmuit88IgQN2dQPnPsUbR",
+      "name": "Dr. med. Nina Müller",
+      "parent_drive_folder_id": "1XRAxTs0-1x_ElLM_2n9aFwUbmbf46nzK",
+      "path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. med. Nina Müller",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1HoeEe3zL4wTXhHGV8ftH_9R8vppChrf3",
+      "name": "Dr. Schmitt - Zahnarzt",
+      "parent_drive_folder_id": "1XRAxTs0-1x_ElLM_2n9aFwUbmbf46nzK",
+      "path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. Schmitt - Zahnarzt",
+      "category": "medical"
+    },
+    {
+      "drive_folder_id": "1SZa8dFfTRLXoxB87FLiIyAaBSGsI5uat",
+      "name": "Sonstige Rechnungen",
+      "path": "Sonstige Rechnungen",
+      "category": "generic"
+    },
+    {
+      "drive_folder_id": "1OWOJil3UiulNF5aDsQWnpd59-lDdYfaw",
+      "name": "Banken",
+      "path": "Banken",
+      "category": "banking"
+    }
+  ],
+  "entities": [
+    {
+      "key": "standard_life",
+      "canonical_name": "Standard Life Versicherung",
+      "entity_type": "insurer",
+      "canonical_drive_folder_id": "1X4oXZlKQrwYsdmp3LB4wnNs_4kKG_RYA",
+      "person": "Peter",
+      "aliases": [
+        {
+          "value": "Standard Life",
+          "weight": 1.0
+        },
+        {
+          "value": "Standard Life Versicherung",
+          "weight": 1.0
+        }
+      ],
+      "contracts": [
+        {
+          "contract_id": "23302930",
+          "person": "Peter",
+          "notes": "Airbag; Ablauf 30.11.2041"
+        }
+      ],
+      "signals": [
+        {
+          "value": "207,06",
+          "type": "amount",
+          "weight": 1.0
+        },
+        {
+          "value": "77.198",
+          "type": "amount",
+          "weight": 1.0
+        },
+        {
+          "value": "30.11.2041",
+          "type": "date",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "key": "dr_kraus",
+      "canonical_name": "Dr. Martin Kraus",
+      "entity_type": "medical_provider",
+      "canonical_drive_folder_id": "1fH5iupsnbZNRHjNPzSemf6bG3wH4I9ph",
+      "person": "Peter",
+      "aliases": [
+        {
+          "value": "Dr. med. Martin Kraus",
+          "weight": 1.0
+        },
+        {
+          "value": "Martin Kraus",
+          "weight": 0.9
+        },
+        {
+          "value": "Dr. Kraus",
+          "weight": 0.9
+        }
+      ]
+    },
+    {
+      "key": "nina_mueller",
+      "canonical_name": "Dr. med. Nina Müller",
+      "entity_type": "medical_provider",
+      "canonical_drive_folder_id": "1wpvJRCjtrZKbmuit88IgQN2dQPnPsUbR",
+      "person": "Peter",
+      "aliases": [
+        {
+          "value": "Dr. med. Nina Müller",
+          "weight": 1.0
+        },
+        {
+          "value": "Nina Müller",
+          "weight": 0.9
+        }
+      ]
+    },
+    {
+      "key": "dr_schmitt",
+      "canonical_name": "Dr. Sven Ch. Schmitt",
+      "entity_type": "dental_provider",
+      "canonical_drive_folder_id": "1HoeEe3zL4wTXhHGV8ftH_9R8vppChrf3",
+      "person": "Peter",
+      "aliases": [
+        {
+          "value": "Sven Ch. Schmitt",
+          "weight": 1.0
+        },
+        {
+          "value": "Dr.med.dent. Sven Ch. Schmitt",
+          "weight": 1.0
+        },
+        {
+          "value": "Zahnarztpraxis am Schillerplatz",
+          "weight": 0.8
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule_key": "medical_billing_intermediary",
+      "priority": 10,
+      "description": "PVS Südwest, PVS dental und DZR sind bei medizinischen Rechnungen typischerweise Abrechnungsstellen. Für die Ablage tatsächlichen Arzt/Zahnarzt/Leistungserbringer und betroffene Person bestimmen."
+    },
+    {
+      "rule_key": "sender_not_destination",
+      "priority": 20,
+      "description": "Absender und Ablageziel sind getrennte Konzepte. Nicht automatisch einen Ordner nach dem Absender wählen."
+    },
+    {
+      "rule_key": "canonical_folder_first",
+      "priority": 30,
+      "description": "Einen bestehenden kanonischen Ordner bevorzugen. Neue Ordner nur bei hoher Sicherheit und wenn kein passender kanonischer Ordner existiert."
+    },
+    {
+      "rule_key": "generic_folder_last_resort",
+      "priority": 40,
+      "description": "Generische Sammelordner wie Versicherungen oder Sonstige Rechnungen sind nur Fallback, wenn kein konkreter fachlicher Kontext sicher erkennbar ist."
+    },
+    {
+      "rule_key": "no_guessing",
+      "priority": 50,
+      "description": "Bei unzureichender Evidenz keine Zuordnung erfinden. Unsichere Dokumente zur Prüfung in der ScanSnap Inbox belassen."
+    }
+  ],
+  "ground_truth_cases": [
+    {
+      "drive_file_id": "1hIbSzUwi1l-_dAugP8th_hx27JvD7QBn",
+      "file_name": "2020-04-14 Zinsen-berechnen.de Renditerechner.pdf",
+      "sender": "Zinsen-berechnen.de",
+      "provider": "Standard Life Versicherung",
+      "person": "Peter",
+      "document_type": "Renditeberechnung",
+      "contract_id": "23302930",
+      "context": "Kapitallebensversicherung",
+      "correct_drive_folder_id": "1X4oXZlKQrwYsdmp3LB4wnNs_4kKG_RYA",
+      "correct_path": "# Versicherungen / Standard Life Versicherung",
+      "reason": "Beitrag 207,06 EUR, Ablauf 30.11.2041 und garantierte Erlebensfallsumme 77.198 EUR stimmen mit Vertrag 23302930 überein."
+    },
+    {
+      "drive_file_id": "1ZnJVr4DFMPBJw9obooT99xRLSYtet2lW",
+      "file_name": "2026-07-13 PVS Südwest GmbH Rechnung 68-0330-005612.pdf",
+      "sender": "PVS Südwest GmbH",
+      "provider": "Dr. Martin Kraus",
+      "person": "Peter",
+      "document_type": "Rechnung",
+      "context": "Arztbehandlung",
+      "correct_drive_folder_id": "1fH5iupsnbZNRHjNPzSemf6bG3wH4I9ph",
+      "correct_path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. Kraus",
+      "reason": "PVS ist Abrechnungsstelle; Dokument nennt Peter als Patient und Dr. Martin Kraus als Leistungserbringer."
+    },
+    {
+      "drive_file_id": "1v9QWSYhAqDL-oUc7CW19ZYwFt8oPQyGt",
+      "file_name": "2020-10-15 PVS Südwest GmbH Mahnung und Rechnungs-Duplikat.pdf",
+      "sender": "PVS Südwest GmbH",
+      "provider": "Dr. med. Nina Müller",
+      "person": "Peter",
+      "document_type": "Mahnung",
+      "context": "Dermatologie",
+      "correct_drive_folder_id": "1wpvJRCjtrZKbmuit88IgQN2dQPnPsUbR",
+      "correct_path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. med. Nina Müller",
+      "reason": "Dokument nennt Peter als behandelte Person und Dr. Nina Müller als behandelnde Dermatologin."
+    },
+    {
+      "drive_file_id": "1wqeJecVycOfIHjIn0fOKFWs7IWPy-FXN",
+      "file_name": "2017-04-17 PVS dental GmbH Rechnung Zahnarztbesuch.pdf",
+      "sender": "PVS dental GmbH",
+      "provider": "Dr. Sven Ch. Schmitt",
+      "person": "Peter",
+      "document_type": "Rechnung",
+      "context": "Zahnbehandlung",
+      "correct_drive_folder_id": "1HoeEe3zL4wTXhHGV8ftH_9R8vppChrf3",
+      "correct_path": "Befunde und Medizinsiche Unterlagen / Peter / Dr. Schmitt - Zahnarzt",
+      "reason": "PVS dental ist Abrechnungsstelle; Dokument nennt Peter und Sven Ch. Schmitt."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+services:
+  ground-truth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ground-truth
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Berlin
+      - GROUND_TRUTH_DB=/data/ground-truth.db
+      - GROUND_TRUTH_SEED=/app/ground_truth_seed.json
+    volumes:
+      - ground_truth_data:/data
+    networks:
+      - proxy
+
+volumes:
+  ground_truth_data:
+
+networks:
+  proxy:
+    external: true
