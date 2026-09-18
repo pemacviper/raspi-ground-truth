@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import math
+from html import escape
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,8 +19,10 @@ SEED_PATH = Path(os.getenv("GROUND_TRUTH_SEED", "/app/ground_truth_seed.json"))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "512"))
 AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
+VERSION_PATH = Path(os.getenv("GROUND_TRUTH_VERSION_FILE", "/app/VERSION"))
+APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "dev"
 
-app = FastAPI(title="ScanSnap Ground Truth", version="2.0.0")
+app = FastAPI(title="ScanSnap Ground Truth", version=APP_VERSION)
 
 
 def now_iso() -> str:
@@ -368,7 +371,7 @@ def health() -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "ground-truth",
-            "version": "2.0.0",
+            "version": APP_VERSION,
             "db": str(DB_PATH),
             "folders": conn.execute("SELECT COUNT(*) n FROM canonical_folders WHERE active=1").fetchone()["n"],
             "entities": conn.execute("SELECT COUNT(*) n FROM entities WHERE active=1").fetchone()["n"],
@@ -455,7 +458,7 @@ def context(req: ContextRequest) -> dict[str, Any]:
         sem = semantic_matches(conn, req.embedding, req.semantic_top_k)
 
     return {
-        "ground_truth_version": "2.0.0",
+        "ground_truth_version": APP_VERSION,
         "matches": matches[:8],
         "semantic_matches": sem,
         "canonical_folders": canonical_folders,
@@ -544,6 +547,44 @@ def approved_reviews() -> dict[str, Any]:
     return {"reviews": [dict(r) for r in rows]}
 
 
+def page_shell(title: str, body: str) -> str:
+    return f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{escape(title)}</title>
+<style>
+:root{{--bg:#f4f6f8;--card:#fff;--text:#18212b;--muted:#667085;--line:#e4e7ec;--accent:#175cd3;--ok:#067647;--warn:#b54708}}
+*{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,sans-serif}}
+main{{max-width:980px;margin:32px auto;padding:0 18px}} .top{{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}}
+h1{{font-size:25px;margin:0}} h2{{font-size:18px;margin:0 0 14px}} .version{{color:var(--muted);font-size:13px}}
+.card{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 1px 2px #1018280d}}
+.grid{{display:grid;grid-template-columns:160px 1fr;gap:8px 16px}} .label{{color:var(--muted)}} .value{{font-weight:550;overflow-wrap:anywhere}}
+.badge{{display:inline-block;padding:3px 9px;border-radius:999px;background:#ecfdf3;color:var(--ok);font-weight:650}}
+.badge.warn{{background:#fffaeb;color:var(--warn)}} select,input{{width:100%;padding:11px;border:1px solid #d0d5dd;border-radius:8px;font:inherit}}
+button{{border:0;border-radius:8px;padding:11px 15px;font:inherit;font-weight:650;cursor:pointer;background:var(--accent);color:white}}
+button.secondary{{background:#475467}} button.warning{{background:#b54708}} details{{margin-top:12px}} summary{{cursor:pointer;color:var(--accent);font-weight:600}}
+pre{{white-space:pre-wrap;word-break:break-word;background:#101828;color:#eaecf0;padding:16px;border-radius:10px;overflow:auto;font-size:12px}}
+.actions{{display:grid;grid-template-columns:1fr 1fr;gap:14px}} .success{{border-left:5px solid var(--ok)}} .hint{{color:var(--muted);margin:5px 0 0}}
+@media(max-width:700px){{.grid{{grid-template-columns:1fr}}.actions{{grid-template-columns:1fr}}}}
+</style></head><body><main><div class="top"><h1>{escape(title)}</h1><span class="version">Ground Truth {escape(APP_VERSION)}</span></div>{body}</main></body></html>"""
+
+
+def analysis_summary(analysis: dict[str, Any]) -> str:
+    rows = [
+        ("Dokument", analysis.get("neuer_name") or analysis.get("original_file_name")),
+        ("Absender", analysis.get("absender") or analysis.get("sender")),
+        ("Leistungserbringer", analysis.get("leistungserbringer") or analysis.get("firma")),
+        ("Person", analysis.get("person")),
+        ("Dokumenttyp", analysis.get("dokumenttyp") or analysis.get("document_type")),
+        ("Datum", analysis.get("datum")),
+        ("Betreff", analysis.get("betreff")),
+        ("Kontext", analysis.get("kontext")),
+    ]
+    return "".join(
+        f'<div class="label">{escape(label)}</div><div class="value">{escape(str(value))}</div>'
+        for label, value in rows if value not in (None, "")
+    )
+
+
 @app.get("/reviews/{review_id}", response_class=HTMLResponse)
 def review_page(review_id: int) -> str:
     with db() as conn:
@@ -553,76 +594,116 @@ def review_page(review_id: int) -> str:
         canonical = conn.execute(
             "SELECT drive_folder_id,path FROM canonical_folders WHERE active=1 ORDER BY path"
         ).fetchall()
+
     analysis = json.loads(r["analysis_json"] or "{}")
     live = json.loads(r["live_folders_json"] or "[]")
-    options = {}
-    for f in canonical:
-        options[f["drive_folder_id"]] = f["path"]
-    for f in live:
-        fid=f.get("id")
+    options: dict[str, str] = {}
+    for folder in canonical:
+        options[folder["drive_folder_id"]] = folder["path"]
+    for folder in live:
+        fid = folder.get("id")
         if fid:
-            options[fid] = f.get("path") or (
+            options[fid] = folder.get("path") or (
                 (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") +
-                (f.get("name") or f.get("title") or fid)
+                (folder.get("name") or folder.get("title") or fid)
             )
     option_html = "".join(
-        f'<option value="{fid}">{path}</option>' for fid,path in sorted(options.items(), key=lambda x:x[1].casefold())
+        f'<option value="{escape(fid, quote=True)}">{escape(path)}</option>'
+        for fid, path in sorted(options.items(), key=lambda x: x[1].casefold())
     )
-    disabled = r["status"] != "pending"
-    if disabled:
-        return f"""<!doctype html><meta charset="utf-8"><title>ScanSnap Review</title>
-        <style>body{{font:16px system-ui;max-width:850px;margin:40px auto;padding:0 20px}}</style>
-        <h1>ScanSnap Review #{review_id}</h1><p>Status: <b>{r["status"]}</b></p>
-        <p>{r["file_name"] or ""}</p>"""
-    return f"""<!doctype html><meta charset="utf-8"><title>ScanSnap Review</title>
-    <style>body{{font:16px system-ui;max-width:850px;margin:40px auto;padding:0 20px}}fieldset{{margin:20px 0;padding:20px}}input,select,button{{font:inherit;padding:8px;margin:6px 0;max-width:100%}}pre{{white-space:pre-wrap;background:#f5f5f5;padding:12px}}</style>
-    <h1>ScanSnap Review #{review_id}</h1>
-    <p><b>Datei:</b> {r["file_name"] or ""}<br><b>Grund:</b> {r["reason"]}<br>
-    <b>Confidence:</b> {r["confidence"] if r["confidence"] is not None else "—"}<br>
-    <b>Vorschlag:</b> {(r["suggested_parent_path"] or "—")} / {(r["suggested_folder_name"] or "—")}</p>
-    <pre>{json.dumps(analysis, ensure_ascii=False, indent=2)}</pre>
+
+    if r["status"] != "pending":
+        body = f"""<section class="card success">
+        <span class="badge">{escape(r["status"])}</span>
+        <h2>Review bereits entschieden</h2>
+        <div class="grid"><div class="label">Datei</div><div class="value">{escape(r["file_name"] or "")}</div>
+        <div class="label">Ziel</div><div class="value">{escape(r["selected_path"] or r["approved_new_folder_name"] or "—")}</div></div>
+        <p class="hint">Die Entscheidung liegt in der Review Queue und wird von n8n verarbeitet.</p></section>"""
+        return page_shell(f"ScanSnap Review #{review_id}", body)
+
+    confidence = "—" if r["confidence"] is None else f'{float(r["confidence"])*100:.0f} %'
+    suggested = " / ".join(x for x in [r["suggested_parent_path"], r["suggested_folder_name"]] if x) or "Kein eindeutiger Vorschlag"
+    evidence = analysis.get("evidence") or []
+    evidence_html = "".join(f"<li>{escape(str(x))}</li>" for x in evidence)
+    body = f"""
+    <section class="card">
+      <span class="badge warn">Manuelle Prüfung</span>
+      <h2>{escape(analysis.get("betreff") or analysis.get("dokumenttyp") or "Dokument prüfen")}</h2>
+      <div class="grid">{analysis_summary(analysis)}</div>
+    </section>
+    <section class="card">
+      <h2>Warum ist eine Entscheidung nötig?</h2>
+      <div class="grid">
+        <div class="label">Grund</div><div class="value">{escape(r["reason"] or "—")}</div>
+        <div class="label">Modell-Sicherheit</div><div class="value">{escape(confidence)}</div>
+        <div class="label">Vorgeschlagener Kontext</div><div class="value">{escape(suggested)}</div>
+      </div>
+      {f'<h3>Evidenz</h3><ul>{evidence_html}</ul>' if evidence_html else ''}
+      <details><summary>Technische Analyse anzeigen</summary><pre>{escape(json.dumps(analysis, ensure_ascii=False, indent=2))}</pre></details>
+    </section>
     <form method="post" action="/reviews/{review_id}/resolve">
-      <fieldset><legend>Bestehenden Ordner verwenden</legend>
-      <select name="existing_folder_id"><option value="">Bitte wählen…</option>{option_html}</select><br>
-      <button name="action" value="existing">Bestehenden Ordner bestätigen</button></fieldset>
-      <fieldset><legend>Neuen Ordner bewusst anlegen</legend>
-      <p>Parent: <b>{r["suggested_parent_path"] or "nicht erkannt"}</b></p>
-      <input name="new_folder_name" value="{r["suggested_folder_name"] or ""}" placeholder="Neuer Ordnername"><br>
-      <button name="action" value="new">Neuen Ordner bestätigen</button></fieldset>
-      <fieldset><legend>Später entscheiden</legend><button name="action" value="defer">Noch nicht entscheiden</button></fieldset>
+      <div class="actions">
+        <section class="card"><h2>Bestehenden Ordner verwenden</h2>
+          <p class="hint">Bevorzugte Option, wenn der passende Ablageort bereits existiert.</p>
+          <select name="existing_folder_id"><option value="">Ordner auswählen…</option>{option_html}</select><br><br>
+          <button name="action" value="existing">Zuordnung bestätigen</button>
+        </section>
+        <section class="card"><h2>Neuen Ordner freigeben</h2>
+          <p class="hint">Nur verwenden, wenn wirklich eine neue Kategorie benötigt wird.</p>
+          <div class="label">Übergeordneter Ordner</div><div class="value">{escape(r["suggested_parent_path"] or "nicht erkannt")}</div><br>
+          <input name="new_folder_name" value="{escape(r["suggested_folder_name"] or "", quote=True)}" placeholder="Neuer Ordnername"><br><br>
+          <button class="warning" name="action" value="new">Neuen Ordner freigeben</button>
+        </section>
+      </div>
+      <section class="card"><button class="secondary" name="action" value="defer">Später entscheiden</button></section>
     </form>"""
+    return page_shell(f"ScanSnap Review #{review_id}", body)
 
 
 @app.post("/reviews/{review_id}/resolve", response_class=HTMLResponse)
 def resolve_review(review_id: int, action: str = Form(...),
                    existing_folder_id: str = Form(""), new_folder_name: str = Form("")) -> str:
-    ts=now_iso()
+    ts = now_iso()
     with db() as conn:
-        r=conn.execute("SELECT * FROM review_queue WHERE id=?", (review_id,)).fetchone()
-        if not r: raise HTTPException(404, "Review not found")
+        r = conn.execute("SELECT * FROM review_queue WHERE id=?", (review_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, "Review not found")
         if r["status"] != "pending":
-            return f"<h1>Review #{review_id}</h1><p>Bereits entschieden: {r['status']}</p>"
-        if action=="defer":
-            return f"<h1>Review #{review_id}</h1><p>Unverändert. Du kannst später entscheiden.</p>"
-        if action=="existing":
-            if not existing_folder_id: raise HTTPException(400, "No existing folder selected")
-            folder=conn.execute("SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1",(existing_folder_id,)).fetchone()
-            path=folder["path"] if folder else None
+            return page_shell(f"Review #{review_id}", f'<section class="card"><h2>Bereits entschieden</h2><p>Status: <span class="badge">{escape(r["status"])}</span></p></section>')
+        if action == "defer":
+            return page_shell(f"Review #{review_id}", '<section class="card"><h2>Keine Änderung</h2><p>Das Dokument bleibt zur Prüfung vorgemerkt. Du kannst diese Seite später erneut öffnen.</p></section>')
+        if action == "existing":
+            if not existing_folder_id:
+                raise HTTPException(400, "No existing folder selected")
+            folder = conn.execute("SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1", (existing_folder_id,)).fetchone()
+            path = folder["path"] if folder else None
             if not path:
-                live=json.loads(r["live_folders_json"] or "[]")
-                hit=next((x for x in live if x.get("id")==existing_folder_id),None)
-                if not hit: raise HTTPException(400, "Selected folder was not offered by this review")
-                path=(r["suggested_parent_path"]+" / " if r["suggested_parent_path"] else "")+(hit.get("name") or hit.get("title") or existing_folder_id)
+                live = json.loads(r["live_folders_json"] or "[]")
+                hit = next((x for x in live if x.get("id") == existing_folder_id), None)
+                if not hit:
+                    raise HTTPException(400, "Selected folder was not offered by this review")
+                path = (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") + (hit.get("name") or hit.get("title") or existing_folder_id)
             conn.execute("""UPDATE review_queue SET status='approved_existing',resolution_type='existing',
                          selected_drive_folder_id=?,selected_path=?,decided_at=? WHERE id=?""",
-                         (existing_folder_id,path,ts,review_id))
-            return f"<h1>Bestätigt</h1><p>{path}</p><p>n8n übernimmt die Zuordnung beim nächsten Review-Lauf.</p>"
-        if action=="new":
-            name=re.sub(r'[\\\\/:*?"<>|]+','-',new_folder_name).strip()
-            if not name or not r["suggested_parent_id"]: raise HTTPException(400, "New folder needs a name and an approved parent")
+                         (existing_folder_id, path, ts, review_id))
+            body = f"""<section class="card success"><span class="badge">Bestätigt</span>
+            <h2>Zuordnung gespeichert</h2><div class="grid">
+            <div class="label">Dokument</div><div class="value">{escape(r["file_name"] or "")}</div>
+            <div class="label">Zielordner</div><div class="value">{escape(path)}</div></div>
+            <p class="hint">n8n übernimmt die Datei beim nächsten Review-Lauf. Danach wird die bestätigte Zuordnung in Ground Truth gespeichert und kann künftig als Präzedenzfall dienen.</p></section>"""
+            return page_shell("Zuordnung bestätigt", body)
+        if action == "new":
+            name = re.sub(r'[\\/:*?"<>|]+', '-', new_folder_name).strip()
+            if not name or not r["suggested_parent_id"]:
+                raise HTTPException(400, "New folder needs a name and an approved parent")
             conn.execute("""UPDATE review_queue SET status='approved_new',resolution_type='new',
-                         approved_new_folder_name=?,decided_at=? WHERE id=?""",(name,ts,review_id))
-            return f"<h1>Neue Ordneranlage bestätigt</h1><p>{r['suggested_parent_path']} / {name}</p><p>n8n legt ihn beim nächsten Review-Lauf an und schreibt die Entscheidung in Ground Truth.</p>"
+                         approved_new_folder_name=?,decided_at=? WHERE id=?""", (name, ts, review_id))
+            path = f'{r["suggested_parent_path"] or ""} / {name}'.strip(" /")
+            body = f"""<section class="card success"><span class="badge">Freigegeben</span>
+            <h2>Neuer Ordner wird angelegt</h2><div class="grid">
+            <div class="label">Neuer Ablageort</div><div class="value">{escape(path)}</div></div>
+            <p class="hint">n8n legt den Ordner beim nächsten Review-Lauf in Google Drive an, registriert seine echte Drive-ID in Ground Truth und verschiebt anschließend das Dokument.</p></section>"""
+            return page_shell("Ordnerfreigabe gespeichert", body)
         raise HTTPException(400, "Unknown action")
 
 
@@ -705,7 +786,7 @@ def confirm(req: ConfirmRequest) -> dict[str, Any]:
 def export() -> dict[str, Any]:
     with db() as conn:
         return {
-            "version": "1.2.1",
+            "version": APP_VERSION,
             "exported_at": now_iso(),
             "canonical_folders": [dict(x) for x in conn.execute("SELECT * FROM canonical_folders ORDER BY path")],
             "entities": [dict(x) for x in conn.execute("SELECT * FROM entities ORDER BY canonical_name")],
