@@ -769,14 +769,39 @@ def resolve_review(review_id: int, action: str = Form(...),
         if action == "existing":
             if not existing_folder_id:
                 raise HTTPException(400, "No existing folder selected")
-            folder = conn.execute("SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1", (existing_folder_id,)).fetchone()
+            folder = conn.execute(
+                "SELECT path FROM canonical_folders WHERE drive_folder_id=? AND active=1",
+                (existing_folder_id,),
+            ).fetchone()
             path = folder["path"] if folder else None
             if not path:
                 live = json.loads(r["live_folders_json"] or "[]")
                 hit = next((x for x in live if x.get("id") == existing_folder_id), None)
                 if not hit:
                     raise HTTPException(400, "Selected folder was not offered by this review")
-                path = (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") + (hit.get("name") or hit.get("title") or existing_folder_id)
+                path = hit.get("path") or (
+                    (r["suggested_parent_path"] + " / " if r["suggested_parent_path"] else "") +
+                    (hit.get("name") or hit.get("title") or existing_folder_id)
+                )
+                # The user explicitly selected an existing live Drive folder.
+                # Promote that folder to canonical Ground Truth before n8n calls /confirm.
+                name = hit.get("name") or hit.get("title") or path.rsplit(" / ", 1)[-1]
+                parent_drive_folder_id = None
+                parents = hit.get("parents")
+                if isinstance(parents, list) and parents:
+                    parent_drive_folder_id = parents[0]
+                conn.execute(
+                    """INSERT INTO canonical_folders
+                       (drive_folder_id,name,parent_drive_folder_id,path,category,active,created_at,updated_at)
+                       VALUES (?,?,?,?,NULL,1,?,?)
+                       ON CONFLICT(drive_folder_id) DO UPDATE SET
+                         name=excluded.name,
+                         parent_drive_folder_id=COALESCE(excluded.parent_drive_folder_id,canonical_folders.parent_drive_folder_id),
+                         path=excluded.path,
+                         active=1,
+                         updated_at=excluded.updated_at""",
+                    (existing_folder_id, name, parent_drive_folder_id, path, ts, ts),
+                )
             conn.execute("""UPDATE review_queue SET status='approved_existing',resolution_type='existing',
                          selected_drive_folder_id=?,selected_path=?,decided_at=? WHERE id=?""",
                          (existing_folder_id, path, ts, review_id))
