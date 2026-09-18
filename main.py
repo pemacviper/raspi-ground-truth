@@ -199,7 +199,7 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     table_sql = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='review_queue'"
     ).fetchone()
-    normalized_sql = re.sub(r"\\s+", "", (table_sql["sql"] if table_sql else "")).lower()
+    normalized_sql = re.sub(r"\s+", "", (table_sql["sql"] if table_sql else "")).lower()
     if "unique(drive_file_id,status)" in normalized_sql:
         conn.execute("ALTER TABLE review_queue RENAME TO review_queue_legacy")
         conn.execute("""
