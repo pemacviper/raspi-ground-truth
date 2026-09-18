@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY main.py /app/main.py
 COPY ground_truth_seed.json /app/ground_truth_seed.json
+COPY VERSION /app/VERSION
 
 EXPOSE 8000
 
