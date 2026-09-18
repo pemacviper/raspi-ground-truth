@@ -1,5 +1,7 @@
 # ScanSnap Ground Truth Service 2.0
 
+> Die vollständige Betriebs- und Architektur-Dokumentation des Raspberry Pi befindet sich in [`RASPI-DOKUMENTATION.md`](RASPI-DOKUMENTATION.md).
+
 Ground Truth 2.0 ist eine **hybride Wissensbasis**. SQLite bleibt die autoritative Source of Truth für Ordner, Regeln, Entitäten, Verträge und bestätigte Fälle. Zusätzlich können bestätigte Fälle semantische Embeddings erhalten.
 
 ## Architektur
